@@ -1,16 +1,21 @@
 // src/p2p/checkpoint.js
-// Checkpoint-side P2P listener, offline DHT bootstrapper, and report store.
+// Checkpoint-side P2P listener, offline TCP transport, and report store.
 
 'use strict'
 
+const net = require('node:net')
 const path = require('node:path')
-const HyperDHT = require('hyperdht')
 const Hyperswarm = require('hyperswarm')
 
 const { TOPIC } = require('./topic')
 const { attachReportReceiver } = require('./receive-report')
 const { createReportStore } = require('./report-store')
-const { startCheckpointBeacon, getLocalIPv4, DEFAULT_DHT_PORT } = require('./beacon')
+const {
+  startCheckpointBeacon,
+  getLocalIPv4,
+  DEFAULT_TCP_PORT,
+  DEFAULT_DHT_PORT
+} = require('./beacon')
 
 const DEFAULT_STORE_PATH = path.resolve(
   __dirname,
@@ -20,35 +25,53 @@ const DEFAULT_STORE_PATH = path.resolve(
 async function startCheckpoint(options = {}) {
   const filePath = options.filePath || DEFAULT_STORE_PATH
   const host = options.host || getLocalIPv4()
+  const tcpPort = options.tcpPort || DEFAULT_TCP_PORT
   const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
 
   // Load persistent reports before accepting new connections.
   const store = await createReportStore(filePath)
 
-  // Start local DHT bootstrapper for 100% offline local-network discovery.
-  let bootstrapper = null
-  try {
-    bootstrapper = HyperDHT.bootstrapper(dhtPort, host)
-    await bootstrapper.ready()
-    console.log(`[checkpoint] Offline DHT bootstrapper active on ${host}:${dhtPort}`)
-  } catch (err) {
-    console.log('[checkpoint] Local DHT bootstrapper notice:', err.message)
-  }
+  // 1. Direct offline TCP listener (instant 100% reliable local-hotspot connection)
+  const tcpServer = net.createServer((socket) => {
+    const peerAddress = socket.remoteAddress || 'unknown'
+    console.log('[checkpoint] Hiker connected (direct offline):', peerAddress)
 
-  // Start UDP discovery beacon for zero-config offline discovery by hikers.
+    socket.on('close', () => {
+      console.log('[checkpoint] Hiker disconnected (direct offline):', peerAddress)
+    })
+
+    attachReportReceiver(socket, {
+      onReport: async (report) => {
+        const result = await store.saveReport(report)
+        if (result.duplicate) {
+          console.log('[checkpoint] Duplicate report:', report.id)
+        } else {
+          console.log('[checkpoint] Report saved:', report.id)
+        }
+      },
+      onGetReports: async () => {
+        return store.getReports()
+      }
+    })
+  })
+
+  await new Promise((resolve) => {
+    tcpServer.listen(tcpPort, '0.0.0.0', () => {
+      console.log(`[checkpoint] Direct offline TCP transport active on port ${tcpPort}`)
+      resolve()
+    })
+  })
+
+  // 2. Start UDP discovery beacon for zero-config offline discovery by hikers
   let beacon = null
   try {
-    beacon = await startCheckpointBeacon({ host, dhtPort })
+    beacon = await startCheckpointBeacon({ host, tcpPort, dhtPort })
   } catch (err) {
     console.log('[checkpoint] UDP beacon notice:', err.message)
   }
 
-  const bootstrapNodes = bootstrapper
-    ? [{ host, port: dhtPort }]
-    : undefined
-
-  const swarm = new Hyperswarm({ bootstrap: bootstrapNodes })
-
+  // 3. Hyperswarm swarm (for topic discovery when online / internet reachable)
+  const swarm = new Hyperswarm()
   let shutdownPromise = null
 
   swarm.on('connection', (socket, peerInfo) => {
@@ -56,25 +79,20 @@ async function startCheckpoint(options = {}) {
       ? peerInfo.publicKey.toString('hex')
       : 'unknown'
 
-    console.log('[checkpoint] Hiker connected:', peerKey)
+    console.log('[checkpoint] Hiker connected (swarm):', peerKey)
 
     socket.on('close', () => {
-      console.log('[checkpoint] Hiker disconnected:', peerKey)
+      console.log('[checkpoint] Hiker disconnected (swarm):', peerKey)
     })
 
-    // Attach the report parser and validator.
     attachReportReceiver(socket, {
       onReport: async (report) => {
         const result = await store.saveReport(report)
-
         if (result.duplicate) {
           console.log('[checkpoint] Duplicate report:', report.id)
         } else {
           console.log('[checkpoint] Report saved:', report.id)
         }
-
-        // Returning successfully allows the receiver to send REPORT_ACK.
-        // A storage failure causes REPORT_ERROR instead.
       },
       onGetReports: async () => {
         return store.getReports()
@@ -83,19 +101,16 @@ async function startCheckpoint(options = {}) {
   })
 
   swarm.on('error', (error) => {
-    console.error('[checkpoint] Swarm error:', error.message)
+    console.error('[checkpoint] Swarm notice:', error.message)
   })
 
   console.log('[checkpoint] Joining shared topic...')
-
-  // Checkpoint accepts incoming connections but does not search for peers.
   const discovery = swarm.join(TOPIC, {
     server: true,
     client: false
   })
 
-  // Wait until the checkpoint has announced itself.
-  await discovery.flushed()
+  discovery.flushed().catch(() => {})
 
   const existingReports = await store.getReports()
 
@@ -108,9 +123,9 @@ async function startCheckpoint(options = {}) {
     if (!shutdownPromise) {
       shutdownPromise = (async () => {
         console.log('[checkpoint] Shutting down...')
-        await swarm.destroy()
+        await new Promise((res) => tcpServer.close(res))
         if (beacon) await beacon.destroy()
-        if (bootstrapper) await bootstrapper.destroy()
+        await swarm.destroy().catch(() => {})
         console.log('[checkpoint] Stopped.')
       })()
     }
@@ -120,6 +135,7 @@ async function startCheckpoint(options = {}) {
 
   return {
     swarm,
+    tcpServer,
     store,
     destroy
   }

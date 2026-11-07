@@ -1,5 +1,6 @@
 // peer.js
 // Hiker-side P2P connection to the checkpoint.
+// Supports both direct offline local-hotspot transport and Hyperswarm swarm discovery.
 //
 // Usage:
 //   const peer = new HikerPeer()
@@ -10,6 +11,7 @@
 
 'use strict'
 
+const net = require('node:net')
 const { EventEmitter } = require('node:events')
 const Hyperswarm = require('hyperswarm')
 const { TOPIC } = require('./topic')
@@ -43,24 +45,48 @@ class HikerPeer extends EventEmitter {
 
     this._setStatus('connecting')
 
-    // Discover local checkpoint beacon over local Wi-Fi/hotspot (zero-internet offline mode)
-    if (!this.swarm) {
-      const found = await discoverCheckpoint({
-        directHost: options.checkpointHost || this._options.checkpointHost || process.env.CHECKPOINT_HOST,
-        timeoutMs: options.discoveryTimeout ?? 1200
+    // 1. Try local-network offline beacon discovery first (instant on phone hotspot)
+    const found = await discoverCheckpoint({
+      directHost: options.checkpointHost || this._options.checkpointHost || process.env.CHECKPOINT_HOST,
+      timeoutMs: options.discoveryTimeout ?? 1200
+    })
+
+    if (found && found.tcpPort) {
+      console.log(`[hiker] Discovered offline checkpoint at ${found.host}:${found.tcpPort}`)
+      console.log('[hiker] Connecting via direct offline transport...')
+
+      return new Promise((resolve, reject) => {
+        let timer = null
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            reject(new Error(
+              `[hiker] Connection to checkpoint timed out after ${timeoutMs}ms. ` +
+              'Verify checkpoint is running and both devices share the same local hotspot.'
+            ))
+          }, timeoutMs)
+        }
+
+        const socket = net.connect({ host: found.host, port: found.tcpPort }, () => {
+          if (timer) clearTimeout(timer)
+          this._conn = socket
+          this._setupConn(socket)
+          this._setStatus('connected')
+          console.log('[hiker] connected to checkpoint')
+          resolve()
+        })
+
+        socket.on('error', (err) => {
+          if (timer) clearTimeout(timer)
+          this._setStatus('disconnected')
+          reject(err)
+        })
       })
+    }
 
-      const bootstrap = found
-        ? [{ host: found.host, port: found.port }]
-        : undefined
-
-      if (found) {
-        console.log(`[hiker] Discovered offline checkpoint at ${found.host}:${found.port}`)
-      } else {
-        console.log('[hiker] No offline beacon found; attempting public DHT bootstrap...')
-      }
-
-      this.swarm = new Hyperswarm({ bootstrap })
+    // 2. If no local beacon was found, fall back to Hyperswarm swarm (for remote / internet DHT)
+    console.log('[hiker] No local beacon found; attempting public Hyperswarm DHT bootstrap...')
+    if (!this.swarm) {
+      this.swarm = new Hyperswarm()
     }
 
     return new Promise((resolve, reject) => {
@@ -80,7 +106,6 @@ class HikerPeer extends EventEmitter {
       }
 
       const onConnection = (conn) => {
-        // Multi-interface deduplication: If already connected, discard extraneous sockets.
         if (this._conn && !this._conn.destroyed) {
           conn.destroy()
           return
@@ -89,7 +114,7 @@ class HikerPeer extends EventEmitter {
         this._conn = conn
         this._setupConn(conn)
         this._setStatus('connected')
-        console.log('[hiker] connected to checkpoint')
+        console.log('[hiker] connected to checkpoint (swarm)')
 
         if (!settled) {
           settled = true
@@ -98,10 +123,7 @@ class HikerPeer extends EventEmitter {
         }
       }
 
-      // Listen for incoming connections
       this.swarm.on('connection', onConnection)
-
-      // Join the topic as client-only
       this.swarm.join(TOPIC, { server: false, client: true })
 
       this.swarm.flush().catch((err) => {
@@ -243,7 +265,7 @@ class HikerPeer extends EventEmitter {
       this._conn = null
     }
     if (this.swarm) {
-      await this.swarm.destroy()
+      await this.swarm.destroy().catch(() => {})
       this.swarm = null
     }
   }

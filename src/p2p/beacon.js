@@ -9,6 +9,7 @@ const dgram = require('node:dgram')
 const os = require('node:os')
 
 const BEACON_PORT = 49738
+const DEFAULT_TCP_PORT = 49736
 const DEFAULT_DHT_PORT = 49737
 
 function getLocalIPv4 () {
@@ -55,9 +56,10 @@ function getBroadcastAddresses () {
 }
 
 // Start beacon responder on the Checkpoint.
-// Listens for TRAILSIGNAL_DISCOVER and replies with its DHT bootstrap coordinates.
+// Listens for TRAILSIGNAL_DISCOVER and replies with its direct TCP and DHT coordinates.
 function startCheckpointBeacon (options = {}) {
   const host = options.host || getLocalIPv4()
+  const tcpPort = options.tcpPort || DEFAULT_TCP_PORT
   const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
   const port = options.port || BEACON_PORT
 
@@ -68,7 +70,8 @@ function startCheckpointBeacon (options = {}) {
     if (text === 'TRAILSIGNAL_DISCOVER') {
       const response = Buffer.from(JSON.stringify({
         type: 'TRAILSIGNAL_BEACON',
-        dhtHost: host,
+        host,
+        tcpPort,
         dhtPort
       }))
       socket.send(response, rinfo.port, rinfo.address, (err) => {
@@ -86,9 +89,10 @@ function startCheckpointBeacon (options = {}) {
       try {
         socket.setBroadcast(true)
       } catch {}
-      console.log(`[checkpoint-beacon] Listening on UDP ${port} (announcing ${host}:${dhtPort})`)
+      console.log(`[checkpoint-beacon] Listening on UDP ${port} (announcing ${host}:${tcpPort})`)
       resolve({
         host,
+        tcpPort,
         dhtPort,
         destroy: () => new Promise((res) => socket.close(res))
       })
@@ -99,9 +103,11 @@ function startCheckpointBeacon (options = {}) {
 // Hiker: broadcast discovery request to find nearby checkpoint.
 async function discoverCheckpoint (options = {}) {
   const directHost = options.directHost || process.env.CHECKPOINT_HOST
+  const tcpPort = options.tcpPort || DEFAULT_TCP_PORT
   const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
+
   if (directHost) {
-    return { host: directHost, port: dhtPort, direct: true }
+    return { host: directHost, tcpPort, dhtPort, direct: true }
   }
 
   const timeoutMs = options.timeoutMs ?? 1500
@@ -131,7 +137,8 @@ async function discoverCheckpoint (options = {}) {
           cleanup()
           resolve({
             host: rinfo.address,
-            port: data.dhtPort || dhtPort
+            tcpPort: data.tcpPort || tcpPort,
+            dhtPort: data.dhtPort || dhtPort
           })
         }
       } catch {}
@@ -160,6 +167,7 @@ async function discoverCheckpoint (options = {}) {
 
 module.exports = {
   BEACON_PORT,
+  DEFAULT_TCP_PORT,
   DEFAULT_DHT_PORT,
   getLocalIPv4,
   getBroadcastAddresses,
