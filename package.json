@@ -8,6 +8,7 @@
     "ai:transcribe": "node src/ai/run-transcription.js",
     "ai:talk": "node src/ai/talk-and-transcribe.js",
     "checkpoint:alerts": "node src/checkpoint/run-checkpoint.js",
+    "dev": "node src/server.js",
     "test": "node --test test/group-alerts.test.js test/group-alerts-normalization.test.js"
   },
   "repository": {
