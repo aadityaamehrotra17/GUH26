@@ -4,3 +4,4 @@ hello-pear-qvac-tui/
 .env
 data/*.json
 data/*.tmp
+data/recordings/

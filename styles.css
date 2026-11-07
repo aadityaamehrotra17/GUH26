@@ -1,0 +1,59 @@
+:root {
+  color: #23332d;
+  background: #f3f5ef;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+.page { width: min(100% - 40px, 980px); min-height: 100vh; margin: auto; display: flex; flex-direction: column; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; }
+.wordmark { border: 0; background: none; color: #23332d; font-size: 18px; font-weight: 750; padding: 0; }
+.back, .quiet { border: 1px solid #cbd4c8; border-radius: 999px; background: transparent; color: #53645b; padding: 9px 16px; }
+.welcome { margin: auto 0; padding: 7vh 0 12vh; max-width: 780px; }
+.eyebrow { color: #718074; font-size: 11px; font-weight: 800; letter-spacing: .16em; margin: 0 0 20px; }
+h1 { color: #23332d; font-size: clamp(42px, 8vw, 78px); letter-spacing: -.06em; line-height: .96; margin: 0; }
+h1 em { color: #6d9477; font-style: normal; }
+.intro { color: #65756c; font-size: 18px; line-height: 1.6; margin: 28px 0 48px; max-width: 500px; }
+.choice-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.choice { background: #fff; border: 1px solid #dfe6dc; border-radius: 20px; color: #23332d; min-height: 190px; padding: 25px; text-align: left; transition: transform .2s, box-shadow .2s; }
+.choice:hover { box-shadow: 0 12px 30px #23332d14; transform: translateY(-3px); }
+.choice-icon { color: #6d9477; display: block; font-size: 30px; margin-bottom: 30px; }
+.choice strong, .choice small { display: block; }
+.choice strong { font-size: 19px; margin-bottom: 8px; }
+.choice small, .muted, footer { color: #78877e; line-height: 1.5; }
+footer { font-size: 12px; padding: 25px 0; }
+.panel { background: #fff; border: 1px solid #e0e7de; border-radius: 24px; margin: 7vh 0 auto; padding: clamp(25px, 5vw, 54px); }
+.wide { margin-bottom: 8vh; }
+.report-panel { max-width: 650px; width: 100%; }
+.panel h1 { font-size: clamp(38px, 6vw, 62px); }
+.record-box { align-items: center; background: #f3f6f0; border-radius: 17px; display: flex; gap: 18px; margin: 35px 0; padding: 18px; }
+.record-box small { color: #78877e; display: block; margin-top: 5px; }
+.record-button { background: #dfebe0; border: 0; border-radius: 50%; color: #709578; font-size: 25px; height: 58px; width: 58px; }
+.record-button.recording { background: #d98b76; color: #fff; }
+label { color: #52635a; display: block; font-size: 13px; font-weight: 700; margin-bottom: 9px; }
+textarea { border: 1px solid #d6dfd4; border-radius: 13px; color: #23332d; min-height: 125px; outline: none; padding: 15px; resize: vertical; width: 100%; }
+textarea:focus { border-color: #86a98b; box-shadow: 0 0 0 3px #86a98b22; }
+.primary { background: #315746; border: 0; border-radius: 999px; color: #fff; font-weight: 700; margin-top: 16px; padding: 14px 22px; }
+.feedback { color: #6d9477; min-height: 22px; }
+.section-heading { align-items: center; display: flex; justify-content: space-between; gap: 20px; }
+.alerts { display: grid; gap: 13px; margin-top: 32px; }
+.alert-card { border: 1px solid #dfe6dc; border-radius: 16px; padding: 20px; }
+.alert-meta { color: #87948b; display: flex; font-size: 12px; gap: 16px; }
+.alert-type { color: #6d9477; font-size: 12px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; text-transform: uppercase; }
+.alert-card h2 { font-size: 19px; font-weight: 600; line-height: 1.4; margin: 0 0 10px; }
+.location { color: #53645b; font-size: 14px; margin: 0 0 16px; }
+details { border-top: 1px solid #edf0ea; color: #78877e; font-size: 13px; padding-top: 12px; }
+summary { cursor: pointer; }
+details p { line-height: 1.5; }
+.empty { border: 1px dashed #cbd4c8; border-radius: 15px; color: #78877e; padding: 30px; text-align: center; }
+@media (max-width: 600px) {
+  .page { width: min(100% - 28px, 980px); }
+  .choice-grid { grid-template-columns: 1fr; }
+  .choice { min-height: 145px; }
+  .choice-icon { margin-bottom: 18px; }
+  .section-heading { align-items: flex-start; }
+}

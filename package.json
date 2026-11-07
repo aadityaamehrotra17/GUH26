@@ -1,10 +1,15 @@
 {
-  "name": "guh26",
+  "name": "trailsignal",
+  "private": true,
   "version": "1.0.0",
   "description": "**Offline trail-safety reports shared between hikers and trail checkpoints.**",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "ai:submit": "node src/ai/submit-report.js",
+    "ai:transcribe": "node src/ai/run-transcription.js",
+    "ai:talk": "node src/ai/talk-and-transcribe.js",
+    "checkpoint:alerts": "node src/checkpoint/run-checkpoint.js",
+    "dev": "node src/server.js",
+    "test": "node --test test/group-alerts.test.js test/group-alerts-normalization.test.js"
   },
   "repository": {
     "type": "git",
@@ -13,12 +18,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/aadityaamehrotra17/GUH26/issues"
   },
   "homepage": "https://github.com/aadityaamehrotra17/GUH26#readme",
+  "type": "module",
   "dependencies": {
+    "@qvac/sdk": "^0.23.0",
     "b4a": "^1.9.0",
     "bare-process": "^4.5.1",
     "hypercore-crypto": "^3.7.0",

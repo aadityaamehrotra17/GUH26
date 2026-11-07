@@ -9,7 +9,7 @@ The MVP demonstrates one journey:
 1. Hiker A records a short spoken report.
 2. QVAC speech-to-text runs on Hiker A's device and produces a transcript.
 3. Pear transfers the transcript to a checkpoint device.
-4. QVAC runs on the checkpoint to format the transcript as a concise structured alert.
+4. Local QVAC validates the transcript and formats useful reports as concise structured alerts.
 5. The checkpoint stores the alert after Hiker A disconnects.
 6. Hiker B connects later and retrieves/displays the alert.
 
@@ -27,7 +27,7 @@ The MVP demonstrates one journey:
 - Run a local QVAC text-generation model at the checkpoint to format the report.
 - Store the alert on the checkpoint.
 - Let a different hiker device connect later and retrieve stored alerts.
-- Display the alert, timestamp, and clearly visible `UNVERIFIED` status.
+- Display the alert and a concise reported time.
 
 ### Three-device demo
 
@@ -71,7 +71,7 @@ DEVICE A — HIKER                 DEVICE B — CHECKPOINT             DEVICE C 
 
 ### Responsibilities
 
-- **QVAC on Hiker A:** speech-to-text only. Keep the original transcript.
+- **QVAC on Hiker A:** speech-to-text. The local test command also validates, formats, and stores a report for the single-device prototype.
 - **Pear:** app/runtime and peer-to-peer transport between the hiker and checkpoint devices.
 - **QVAC on the checkpoint:** turn the transcript into a short, readable, structured alert. It must not add facts that were not in the transcript.
 - **Checkpoint:** store alerts and serve them to later visitors.
@@ -124,10 +124,8 @@ Use one shared topic/room for the demo. Agree on the message names and JSON shap
       "id": "unique-id",
       "createdAt": "2026-11-07T12:00:00.000Z",
       "category": "landslide",
-      "title": "Landslide reported near Bridge 2",
       "description": "A landslide is reported to be blocking the path between Bridge 2 and the summit.",
       "trailSegment": "Bridge 2 to Summit",
-      "status": "unverified",
       "rawTranscript": "A landslide is blocking the path between Bridge 2 and the summit."
     }
   ]
@@ -141,10 +139,40 @@ The examples are illustrative; use the same schema in all modules. Keep the orig
 - The model formats and extracts; it does **not** decide whether a trail is safe.
 - Never invent coordinates, exact locations, severity, injuries, verification, or emergency-service contact.
 - Use `unknown` or omit a field when the speaker did not provide it.
-- Every incoming report starts as `unverified`.
-- Show the report timestamp and unverified state prominently.
+- Keep the report timestamp available for ordering and grouping.
 - Preserve the raw transcript for traceability.
-- If model output is invalid or unavailable, store and display the raw transcript as an unformatted, unverified report.
+- A local QVAC validation step discards clearly useless transcripts, such as conversational filler or unrelated text.
+- If alert-formatting output is invalid, the formatter falls back to a minimal alert based on the raw transcript.
+
+### Local speech-to-text test
+
+The hiker-side transcription module accepts a short WAV file and
+returns plain text using QVAC's local Parakeet model. The expected audio
+format is 16 kHz, mono PCM WAV.
+
+```bash
+npm run ai:transcribe -- path/to/report.wav
+```
+
+The first run downloads and caches the speech model. Later runs use the
+local cache and do not need internet access. This command only prints the
+transcript; it does not store an alert.
+
+To test directly with the Mac's default microphone:
+
+```bash
+npm run ai:talk
+```
+
+Press Enter to start speaking and Enter again to stop. The command uses
+`ffmpeg` to save a temporary 16 kHz mono WAV file under
+`data/recordings/`, then transcribes it locally. macOS may ask Terminal
+or VS Code for microphone permission. It then validates, formats, and
+stores the report locally.
+
+Grouping is currently disabled. The checkpoint returns every stored
+alert as a simple list. The grouping module remains available for a
+later iteration.
 
 ---
 
@@ -196,10 +224,11 @@ const rawTranscript = await transcribeRecording(audioFile);
 **Person 4 — Checkpoint alert formatting**
 1. Get a QVAC text-generation model running locally on the checkpoint.
 2. Implement `formatAlert(rawTranscript)`.
-3. Prompt the model to return only the agreed alert fields.
-4. Parse and validate its output; do not trust generated JSON blindly.
-5. Enforce `status: "unverified"` in application code.
-6. Fall back to storing the raw transcript if generation or parsing fails.
+3. Add a local-QVAC usefulness check to reject clearly useless transcripts.
+4. Prompt the model to return only the agreed alert fields.
+5. Parse and validate its output; do not trust generated JSON blindly.
+6. Keep the output concise and preserve the original transcript.
+7. Fall back to a minimal raw-transcript alert if formatting fails.
 
 Suggested module boundary:
 
@@ -236,11 +265,11 @@ await saveAlert(alert);
 const alerts = await getAlerts();
 ```
 
-The checkpoint should create or retain the report ID and timestamp from the incoming message. The formatter should return fields such as `category`, `title`, `description`, and `trailSegment`; application code should attach the original transcript and force `status: "unverified"`.
+The checkpoint should create or retain the report ID and timestamp from the incoming message. The formatter should return `category`, `description`, and `trailSegment`; application code should attach the original transcript.
 
 **Fallbacks that keep the demo moving:**
 - If transcription is not ready, type the report on Hiker A.
-- If checkpoint LLM is not ready, store/display the raw transcript with `unverified` status.
+- If checkpoint LLM is not ready, store/display the raw transcript as a minimal alert.
 - If P2P is not ready, test AI functions independently with a sample transcript.
 - Do not block the end-to-end demo on a sophisticated database or UI.
 
@@ -308,7 +337,7 @@ Useful documentation:
 - [ ] The checkpoint stores the alert.
 - [ ] Hiker A disconnects.
 - [ ] Hiker B connects afterwards and retrieves the stored alert.
-- [ ] The alert displays its timestamp and `UNVERIFIED` status.
+- [ ] The alert displays a concise reported time.
 - [ ] The raw transcript remains available.
 - [ ] The typed-report and raw-transcript fallbacks work.
 
@@ -321,7 +350,7 @@ Useful documentation:
 5. Show the checkpoint's local QVAC model formatting and storing the alert.
 6. Disconnect Hiker A.
 7. Connect Hiker B and retrieve the alert.
-8. Show the original report, concise alert, timestamp, and `UNVERIFIED` label.
+8. Show the original report, concise alert, date and time.
 
 ---
 
