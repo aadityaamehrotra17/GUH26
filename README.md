@@ -1,310 +1,340 @@
 # TrailSignal
 
-**Offline trail-safety reports shared between hikers and trail
-checkpoints.**
+**Offline trail-safety alerts shared between hikers and trail checkpoints.**
 
-TrailSignal lets hikers report hazards when there is no internet
-connection. A nearby checkpoint stores those reports and shares them
-with later hikers who connect to it.
+TrailSignal is a small prototype for hikers in remote areas without internet access. A hiker speaks a hazard or assistance report; their device transcribes it locally, sends the text peer-to-peer to a trail checkpoint, and the checkpoint uses a local language model to turn it into a concise alert. A later hiker can connect to the checkpoint and retrieve the alert.
 
-The MVP proves one simple journey:
+The MVP demonstrates one journey:
 
-1.  Hiker A creates a report on their device.
-2.  The report is sent peer-to-peer to a checkpoint device.
-3.  The checkpoint keeps the report after Hiker A disconnects.
-4.  Hiker B connects later and receives the report.
+1. Hiker A records a short spoken report.
+2. QVAC speech-to-text runs on Hiker A's device and produces a transcript.
+3. Pear transfers the transcript to a checkpoint device.
+4. QVAC runs on the checkpoint to format the transcript as a concise structured alert.
+5. The checkpoint stores the alert after Hiker A disconnects.
+6. Hiker B connects later and retrieves/displays the alert.
 
-QVAC runs locally to turn a short free-text report into structured
-information. Pear provides the app/runtime and peer-to-peer foundation.
-**No cloud service or external AI API is used in the MVP.**
+**No cloud service or external AI API is used for inference or report storage.** Models must be downloaded/cached before the offline demo.
 
-------------------------------------------------------------------------
+---
 
 ## MVP scope
 
 ### Must work
 
--   Create a trail report from text.
--   Use a locally running QVAC model to extract structured fields.
--   Send the report from a hiker device to a checkpoint over a local,
-    internet-free connection.
--   Store the report on the checkpoint.
--   Let a different hiker device connect later and retrieve stored
-    reports.
--   Display report type, location/segment, description, time and status.
+- Record a short report with push-to-talk.
+- Transcribe the recording locally with QVAC.
+- Send the raw transcript from Hiker A to a checkpoint using Pear.
+- Run a local QVAC text-generation model at the checkpoint to format the report.
+- Store the alert on the checkpoint.
+- Let a different hiker device connect later and retrieve stored alerts.
+- Display the alert, timestamp, and clearly visible `UNVERIFIED` status.
 
-### Keep it simple
+### Three-device demo
 
-For the first demo, use **one checkpoint and two hiker devices**. Use
-text input and a small set of fixed trail segments. Start with a local
-Wi-Fi network/hotspot with internet disabled, provided the chosen Pear
-transport works in that setup.
+Use three devices if possible:
 
-Do not build mobile BLE, maps, accounts, notifications, image analysis,
-voice transcription, multi-checkpoint routing or complex conflict
-resolution yet.
+- **Device A — Hiker:** records speech, runs local transcription, submits transcript.
+- **Device B — Checkpoint:** receives transcript, runs local alert formatting, stores alerts, serves requests.
+- **Device C — Hiker/viewer:** connects later and retrieves/displays stored alerts.
 
-> Important: verify the exact Pear networking/discovery setup on the
-> demo machines early. Peer-to-peer libraries do not automatically
-> guarantee discovery on an isolated network. Do not claim the system
-> works fully offline until the two-device test succeeds with internet
-> disabled.
+Keep the first demo narrow: one checkpoint, one shared trail/topic, one short English report, and a small set of fixed trail segments. Use push-to-talk and a short WAV recording; do not build live/streaming transcription unless everything else is already working.
 
-------------------------------------------------------------------------
+If time is tight, allow a typed-text fallback on Device A. This preserves the P2P and checkpoint workflow if audio capture or transcription takes longer than expected.
+
+> **Offline networking is the biggest early risk.** Hyperswarm uses HyperDHT peer discovery; joining the same topic does not by itself guarantee discovery in a completely isolated network. Prove the exact three-device connection with internet disabled before building the rest. If it does not work quickly, use a direct local-network transport supported by your Pear/Bare setup for the demo and describe the transport honestly. Do not claim internet-free operation until it has been tested with internet disabled.
+
+---
 
 ## Architecture
 
-``` text
-Hiker A app                         Hiker B app
-  |                                    |
-  | report text                        | connect later
-  v                                    v
-Local QVAC model                    Peer client
-  |                                    |
-  | structured report                  | fetch reports
-  v                                    |
-Pear peer connection <----------> Checkpoint device
-                                      |
-                                      v
-                                Local report store
+```text
+DEVICE A — HIKER                 DEVICE B — CHECKPOINT             DEVICE C — HIKER
+      |                                   |                               |
+ Push-to-talk recording                   |                               |
+      |                                   |                               |
+      v                                   |                               |
+ QVAC speech-to-text                      |                               |
+      |                                   |                               |
+ Raw transcript                           |                               |
+      |                                   |                               |
+      +----------- Pear P2P -------------->+                               |
+                                          |                               |
+                                   QVAC local LLM                          |
+                                   formats alert                           |
+                                          |                               |
+                                   Temporary alert store                   |
+                                          |                               |
+                                          +---------- Pear P2P ------------>
+                                                                          |
+                                                                   Alert list/UI
 ```
 
 ### Responsibilities
 
--   **QVAC:** local text-to-structured-report extraction. The model must
-    be downloaded/cached before the offline demo.
--   **Pear:** app runtime and peer-to-peer communication.
--   **Checkpoint:** receives, stores and serves reports. It must retain
-    reports when the reporting hiker disconnects.
--   **Local storage:** persist reports on the checkpoint; a simple local
-    JSON/Hyperbee-backed store is enough for the MVP.
+- **QVAC on Hiker A:** speech-to-text only. Keep the original transcript.
+- **Pear:** app/runtime and peer-to-peer transport between the hiker and checkpoint devices.
+- **QVAC on the checkpoint:** turn the transcript into a short, readable, structured alert. It must not add facts that were not in the transcript.
+- **Checkpoint:** store alerts and serve them to later visitors.
+- **Hiker B:** retrieve and display alerts; no AI model is needed on this device.
+- **Local storage:** use a simple JSON file for the prototype. A database or Hypercore integration is not required to prove the flow.
 
-Keep AI processing and networking separate. The networking code should
-send and receive the agreed report object; it should not depend on how
-QVAC produced it.
+Keep AI and networking separate. The P2P layer should transport plain messages and alert objects; it should not depend on how the transcript or alert was generated.
 
-------------------------------------------------------------------------
+---
 
-## Shared report format
+## Message flow and protocol
 
-Both workstreams should use this shape from the beginning:
+Use one shared topic/room for the demo. Agree on the message names and JSON shapes before implementing the two sides.
 
-``` json
+### Hiker A → checkpoint
+
+```json
 {
-  "id": "unique-report-id",
+  "type": "SUBMIT_REPORT",
+  "reportId": "unique-id",
   "createdAt": "2026-11-07T12:00:00.000Z",
-  "type": "trail_hazard",
-  "category": "landslide",
-  "title": "Path blocked by landslide",
-  "description": "Rocks and mud are blocking the path.",
-  "trailSegment": "Bridge 2 to Summit",
-  "status": "unverified",
-  "source": "hiker-device"
+  "rawTranscript": "A landslide is blocking the path between Bridge 2 and the summit."
 }
 ```
 
-For the MVP, `type` can be `trail_hazard` or `assistance_request`. Keep
-`status` simple: `unverified`, `verified`, or `resolved`.
+### Checkpoint → Hiker A
 
-The original user-entered text should also be retained for traceability.
-Do not let the model invent coordinates, verification, or
-emergency-service contact.
+```json
+{
+  "type": "REPORT_RECEIVED",
+  "reportId": "unique-id"
+}
+```
 
-------------------------------------------------------------------------
+### Hiker B → checkpoint
 
-## Team plan: two parallel workstreams
+```json
+{
+  "type": "GET_ALERTS"
+}
+```
 
-### Workstream A --- Peer-to-peer communication (2 people)
+### Checkpoint → Hiker B
 
-**Goal:** prove that reports can move from one hiker device to a
-checkpoint, remain there, and be retrieved by another hiker device with
-internet disabled.
+```json
+{
+  "type": "ALERTS",
+  "alerts": [
+    {
+      "id": "unique-id",
+      "createdAt": "2026-11-07T12:00:00.000Z",
+      "category": "landslide",
+      "title": "Landslide reported near Bridge 2",
+      "description": "A landslide is reported to be blocking the path between Bridge 2 and the summit.",
+      "trailSegment": "Bridge 2 to Summit",
+      "status": "unverified",
+      "rawTranscript": "A landslide is blocking the path between Bridge 2 and the summit."
+    }
+  ]
+}
+```
 
-Tasks:
+The examples are illustrative; use the same schema in all modules. Keep the original transcript alongside the formatted alert so users can distinguish the source report from the model's summary.
 
-1.  Get the Pear starter/runtime running on the target machines.
-2.  Build the smallest possible peer connection test: connect two peers
-    and exchange a plain text message.
-3.  Test the connection with internet disabled using the intended local
-    network.
-4.  Implement `sendReport(report)` from hiker to checkpoint.
-5.  Implement checkpoint persistence.
-6.  Implement `getReports()` for a newly connected hiker.
-7.  Add a basic connection status and useful error messages.
+### Alert rules
+
+- The model formats and extracts; it does **not** decide whether a trail is safe.
+- Never invent coordinates, exact locations, severity, injuries, verification, or emergency-service contact.
+- Use `unknown` or omit a field when the speaker did not provide it.
+- Every incoming report starts as `unverified`.
+- Show the report timestamp and unverified state prominently.
+- Preserve the raw transcript for traceability.
+- If model output is invalid or unavailable, store and display the raw transcript as an unformatted, unverified report.
+
+---
+
+## Team plan: two parallel workstreams, four people
+
+### Workstream A — Pear P2P (2 people)
+
+**Goal:** move a transcript from Hiker A to the checkpoint, retain it after disconnection, and serve it to Hiker B later.
+
+**Person 1 — checkpoint peer**
+1. Run the Pear app/runtime on the checkpoint device.
+2. Join/listen on the agreed topic or local transport.
+3. Receive `SUBMIT_REPORT`.
+4. Pass the transcript to the checkpoint AI function.
+5. Store the resulting alert in a local JSON file.
+6. Handle `GET_ALERTS` and return the stored alert list.
+
+**Person 2 — hiker peer**
+1. Run the Pear app/runtime on Hiker A and Hiker B devices.
+2. Connect to the checkpoint using the agreed topic/transport.
+3. Send `SUBMIT_REPORT` from Hiker A.
+4. Show a receipt/acknowledgement.
+5. From Hiker B, send `GET_ALERTS` and render the returned list.
 
 Suggested module boundary:
 
-``` js
-// P2P module contract — adapt the implementation to the chosen Pear transport.
-await sendReport(report);
-const reports = await getReports();
+```js
+await submitTranscript({ reportId, createdAt, rawTranscript });
+const alerts = await getAlerts();
 ```
 
-The P2P team owns connection setup, transport, checkpoint storage and
-report retrieval. Keep the public interface small so the AI/UI work can
-integrate without knowing networking internals.
+Keep the public interface small. The AI/UI work should not need to know the networking implementation.
 
-### Workstream B --- Local LLM / QVAC (2 people)
+### Workstream B — Local AI with QVAC (2 people)
 
-**Goal:** get QVAC inference running locally on the actual demo machines
-and convert a hiker's text into the shared report format.
-
-Tasks:
-
-1.  Clone and run the official QVAC + Pear starter.
-2.  Download/cache the model while internet is available.
-3.  Confirm inference works locally after disconnecting from the
-    internet.
-4.  Create a prompt that extracts the shared report fields as JSON.
-5.  Parse and validate the model output.
-6.  Add a safe fallback if the model returns invalid JSON.
-7.  Expose a small function for the app to call.
+**Person 3 — Hiker A transcription**
+1. Get the QVAC runtime and a supported speech-to-text model running on the actual device.
+2. Implement push-to-talk audio capture.
+3. Convert the recording to the format expected by the model (follow the model/runtime requirements; the QVAC Whisper example uses 16 kHz mono WAV).
+4. Run local transcription and return plain text.
+5. Add a typed-text fallback in case audio capture/model setup fails.
 
 Suggested module boundary:
 
-``` js
-// AI module contract
-const reportFields = await extractReport(userText);
+```js
+const rawTranscript = await transcribeRecording(audioFile);
 ```
 
-The AI team owns model loading, prompting, parsing and validation. It
-should return structured data, not send network messages or write
-directly to the checkpoint store.
+**Person 4 — Checkpoint alert formatting**
+1. Get a QVAC text-generation model running locally on the checkpoint.
+2. Implement `formatAlert(rawTranscript)`.
+3. Prompt the model to return only the agreed alert fields.
+4. Parse and validate its output; do not trust generated JSON blindly.
+5. Enforce `status: "unverified"` in application code.
+6. Fall back to storing the raw transcript if generation or parsing fails.
 
-### Integration contract
+Suggested module boundary:
 
-Agree on these interfaces before parallel work begins:
+```js
+const alert = await formatAlert(rawTranscript);
+```
 
-``` js
-// AI
-const reportFields = await extractReport(userText);
+A small model and short prompt are sufficient. Do not spend the hackathon tuning model quality; a reliable local inference call is the goal.
 
-// App adds metadata and a unique ID
-const report = {
-  id,
+---
+
+## Integration contract
+
+Agree on these functions and fields immediately:
+
+```js
+// Hiker A: local QVAC transcription
+const rawTranscript = await transcribeRecording(audioFile);
+
+// Hiker A: Pear sends the transcript to the checkpoint
+await submitTranscript({
+  reportId,
   createdAt: new Date().toISOString(),
-  ...reportFields,
-  source: deviceId
-};
+  rawTranscript
+});
 
-// P2P
-await sendReport(report);
+// Checkpoint: local QVAC formatting
+const alert = await formatAlert(rawTranscript);
 
-// On a later connection
-const reports = await getReports();
+// Checkpoint: persist alert
+await saveAlert(alert);
+
+// Hiker B: Pear retrieves checkpoint alerts
+const alerts = await getAlerts();
 ```
 
-If QVAC is not ready, the app should temporarily use a hard-coded report
-object so the P2P team can continue. If P2P is not ready, the AI team
-should save extracted reports locally. This lets both teams make
-progress independently.
+The checkpoint should create or retain the report ID and timestamp from the incoming message. The formatter should return fields such as `category`, `title`, `description`, and `trailSegment`; application code should attach the original transcript and force `status: "unverified"`.
 
-------------------------------------------------------------------------
+**Fallbacks that keep the demo moving:**
+- If transcription is not ready, type the report on Hiker A.
+- If checkpoint LLM is not ready, store/display the raw transcript with `unverified` status.
+- If P2P is not ready, test AI functions independently with a sample transcript.
+- Do not block the end-to-end demo on a sophisticated database or UI.
+
+---
 
 ## Suggested repository layout
 
 Adapt this to the official starter rather than rewriting its structure:
 
-``` text
+```text
 trailsignal/
 ├── README.md
 ├── src/
 │   ├── app.js
-│   ├── report-schema.js
+│   ├── messages.js
 │   ├── ai/
-│   │   └── extract-report.js
+│   │   ├── transcribe.js
+│   │   └── format-alert.js
 │   ├── p2p/
 │   │   ├── peer.js
 │   │   └── checkpoint-store.js
 │   └── ui/
-│       ├── report-form.js
-│       └── report-list.js
+│       ├── record-report.js
+│       └── alert-list.js
 └── test/
-    ├── sample-reports.json
+    ├── sample-transcripts.json
     └── integration-checklist.md
 ```
 
-Official starting point:
-[hello-pear-qvac-tui](https://github.com/holepunchto/hello-pear-qvac-tui).
+Official starting point: [hello-pear-qvac-tui](https://github.com/holepunchto/hello-pear-qvac-tui).
 
-Useful documentation: - [QVAC
-documentation](https://docs.qvac.tether.io/) - [QVAC
-ecosystem](https://docs.qvac.tether.io/ecosystem/) - [Pear
-documentation](https://docs.pears.com/) - [Pear P2P
-documentation](https://docs.pears.com/p2p/)
+Useful documentation:
+- [QVAC documentation](https://docs.qvac.tether.io/)
+- [QVAC ecosystem](https://docs.qvac.tether.io/ecosystem/)
+- [Pear documentation](https://docs.pears.com/)
+- [Pear P2P documentation](https://docs.pears.com/p2p/)
 
-------------------------------------------------------------------------
+**Version caution:** the existing Pear/QVAC starter may pin an older QVAC package/API than the current QVAC SDK documentation. Inspect the starter's `package.json` and working example before copying code. Do not mix APIs from different SDK versions. Keep the starter's working dependency versions unless you have time to upgrade and retest.
 
-## 12-hour build schedule
+---
 
-  -----------------------------------------------------------------------
-  Time                    Peer-to-peer team       QVAC team
-  ----------------------- ----------------------- -----------------------
-  0--1 h                  Run Pear starter; test  Run QVAC starter; cache
-                          local peer connection   model
+## Three-hour build schedule
 
-  1--3 h                  Exchange a plain text   Extract JSON from
-                          message                 sample report
+| Time | P2P pair | QVAC pair | Integration target |
+|---|---|---|---|
+| 0–30 min | Run Pear starter; prove two peers exchange `hello` with internet disabled | Run local transcription and local text generation independently; start model downloads/caching | Decide transport and freeze message schema |
+| 30–75 min | Implement submit, receive, fetch, and checkpoint JSON storage | Person 3 gets recording → transcript; Person 4 gets transcript → alert JSON | Each module exposes its agreed function |
+| 75–120 min | Connect Hiker A → checkpoint and Hiker B → checkpoint | Connect transcription and formatting to app flow | Complete transcript → checkpoint → stored alert → viewer |
+| 120–150 min | Fix reconnect/retrieval and visible connection state | Add invalid-output fallback and preserve raw transcript | Basic three-device UI |
+| 150–180 min | Run full demo with internet off | Verify both models run locally with internet off | Rehearse twice; freeze features |
 
-  3--5 h                  Send/store/retrieve     Validate output and
-                          report                  fallback
+**Hard stop:** if the chosen P2P discovery path has not passed the internet-disabled device test in the first 30 minutes, switch to a transport that works on the demo network. Do not spend the full hackathon debugging peer discovery.
 
-  5--7 h                  Test a second hiker     Integrate extraction
-                          connecting later        with app
-
-  7--9 h                  Fix offline connection  Test local inference
-                          and persistence         offline
-
-  9--10 h                 Integrate and debug     Integrate and debug
-
-  10--12 h                End-to-end testing      Demo preparation and
-                                                  backup
-  -----------------------------------------------------------------------
-
-**Integration checkpoints:** at hour 2, both teams demonstrate their
-smallest working component; at hour 5, agree the report object is
-flowing between modules; at hour 9, freeze features and test the
-complete flow.
-
-------------------------------------------------------------------------
+---
 
 ## Demo checklist
 
--   [ ] QVAC model is already cached on the demo machines.
--   [ ] Internet is disabled on all devices.
--   [ ] Hiker A can create a report.
--   [ ] QVAC converts the text into the shared report structure.
--   [ ] Hiker A sends the report to the checkpoint.
--   [ ] Hiker A disconnects.
--   [ ] Hiker B connects afterwards.
--   [ ] Hiker B retrieves and sees the stored report.
--   [ ] The report clearly says it is unverified and shows its
-    timestamp.
+- [ ] Models are downloaded/cached on the relevant devices before going offline.
+- [ ] Internet is disabled on all demo devices.
+- [ ] Hiker A can record a short spoken report.
+- [ ] QVAC transcribes it locally.
+- [ ] Hiker A sends the transcript to the checkpoint.
+- [ ] The checkpoint acknowledges receipt.
+- [ ] Checkpoint QVAC formats the transcript locally.
+- [ ] The checkpoint stores the alert.
+- [ ] Hiker A disconnects.
+- [ ] Hiker B connects afterwards and retrieves the stored alert.
+- [ ] The alert displays its timestamp and `UNVERIFIED` status.
+- [ ] The raw transcript remains available.
+- [ ] The typed-report and raw-transcript fallbacks work.
 
 ### 60-second demo story
 
-1.  "We're hiking with no internet."
-2.  Hiker A reports: "A landslide blocks the path between Bridge 2 and
-    the summit."
-3.  Show QVAC extracting the report locally.
-4.  Send it to the checkpoint.
-5.  Disconnect Hiker A.
-6.  Connect Hiker B and retrieve the report.
-7.  Show the warning before Hiker B continues.
+1. "We're hiking somewhere with no internet."
+2. Hiker A says: "A landslide is blocking the path between Bridge 2 and the summit."
+3. Show local QVAC transcription on Hiker A.
+4. Send the transcript peer-to-peer to the checkpoint.
+5. Show the checkpoint's local QVAC model formatting and storing the alert.
+6. Disconnect Hiker A.
+7. Connect Hiker B and retrieve the alert.
+8. Show the original report, concise alert, timestamp, and `UNVERIFIED` label.
 
-------------------------------------------------------------------------
+---
 
-## Out of scope for the MVP
+## Out of scope
 
--   Automatic emergency dispatch or rescue coordination.
--   AI deciding whether a route is safe.
--   Automatic verification of reports.
--   GPS navigation or downloadable maps.
--   Voice/image input.
--   Multiple checkpoint routing and store-carry-forward between
-    checkpoints.
--   User accounts and central administration.
+- AI deciding whether a route is safe or recommending that someone proceed.
+- Automatic report verification or moderation.
+- Emergency dispatch, rescue coordination, or claims that emergency services were contacted.
+- GPS navigation, downloadable maps, or automatic location inference.
+- Live/streaming speech transcription.
+- Image/video analysis.
+- Multiple checkpoints, mesh routing, or complex store-carry-forward.
+- Accounts, central administration, cloud sync, or a production-grade database.
+- Conflict resolution, reputation scoring, and sophisticated anti-spam systems.
 
-TrailSignal is an additional information channel, not a replacement for
-official trail warnings, emergency services or established safety
-procedures.
+TrailSignal is an additional information channel, not a replacement for official trail warnings, emergency services, or established safety procedures. Reports may be incomplete, mistaken, delayed, or unverified; hikers must use their own judgement and follow official guidance.
