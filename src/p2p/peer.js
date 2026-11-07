@@ -157,7 +157,9 @@ class HikerPeer extends EventEmitter {
       throw new Error('[hiker] not connected to checkpoint')
     }
 
-    const timeoutMs = options.timeout ?? 10000
+    // The checkpoint acknowledges after Qwen has processed and stored the
+    // transcript. Cold model startup can take longer than a network request.
+    const timeoutMs = options.timeout ?? 120000
 
     return new Promise((resolve, reject) => {
       const targetId = report?.id
@@ -181,7 +183,10 @@ class HikerPeer extends EventEmitter {
       if (timeoutMs > 0) {
         timer = setTimeout(() => {
           cleanup()
-          reject(new Error(`[hiker] Timed out waiting for REPORT_ACK after ${timeoutMs}ms`))
+          reject(new Error(
+            `[hiker] Timed out waiting for checkpoint processing after ${timeoutMs}ms. ` +
+            'The checkpoint may still be loading or running the local model.'
+          ))
         }, timeoutMs)
       }
 
