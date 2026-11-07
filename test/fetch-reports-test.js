@@ -2,9 +2,7 @@
 // Fetch stored reports from the checkpoint.
 // Usage: node test/fetch-reports-test.js
 
-'use strict'
-
-const { HikerPeer } = require('../src/p2p/peer')
+import { HikerPeer } from '../src/p2p/peer.js'
 
 async function main () {
   const peer = new HikerPeer()
@@ -20,7 +18,7 @@ async function main () {
     console.log('  (no reports currently stored on checkpoint)')
   } else {
     for (const report of reports) {
-      console.log(`  • [${report.status.toUpperCase()}] ${report.title}`)
+      console.log(`  • [${(report.status || 'UNVERIFIED').toUpperCase()}] ${report.title || report.category}`)
       console.log(`    ID: ${report.id} | Category: ${report.category}`)
       console.log(`    Segment: ${report.trailSegment} | Time: ${report.createdAt}`)
       console.log(`    Description: ${report.description}`)

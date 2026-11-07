@@ -117,7 +117,7 @@ function report () {
       feedback.textContent = 'Add a report before sending.'
       return
     }
-    feedback.textContent = 'Sending to the checkpoint…'
+    feedback.textContent = 'Delivering report to checkpoint over P2P…'
     try {
       const response = await fetch('/api/submit', {
         method: 'POST',
@@ -126,8 +126,9 @@ function report () {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error?.startsWith('Report rejected') ? 'Report rejected' : (result.error || 'Could not send report.'))
+      feedback.textContent = 'Report delivered successfully to checkpoint!'
       text.value = ''
-      home()
+      setTimeout(() => home(), 1200)
     } catch (error) {
       feedback.textContent = error.message
     }
@@ -137,13 +138,18 @@ function report () {
 function alertCard (alert) {
   const date = alert.date || alert.createdAt?.slice(0, 10) || 'Unknown date'
   const time = alert.time || alert.createdAt?.slice(11, 16) || 'Unknown time'
+  const status = (alert.status || 'unverified').toUpperCase()
+
   return `
     <article class="alert-card">
-      <div class="alert-meta"><span>${escapeHtml(date)}</span><span>${escapeHtml(time)}</span></div>
+      <div class="alert-meta">
+        <span>${escapeHtml(date)} &bull; ${escapeHtml(time)}</span>
+        <span class="unverified-badge">${escapeHtml(status)}</span>
+      </div>
       <p class="alert-type">${escapeHtml(alert.category || 'Trail report')}</p>
       <h2>${escapeHtml(alert.description || alert.rawTranscript || 'No description')}</h2>
-      <p class="location">${escapeHtml(alert.trailSegment || 'Location not specified')}</p>
-      <details><summary>Original report</summary><p>${escapeHtml(alert.rawTranscript || '')}</p></details>
+      <p class="location">📍 ${escapeHtml(alert.trailSegment || 'Location not specified')}</p>
+      <details><summary>Original report transcript</summary><p>${escapeHtml(alert.rawTranscript || alert.originalText || '')}</p></details>
     </article>
   `
 }
@@ -152,20 +158,30 @@ async function alerts () {
   shell(`
     <section class="panel wide">
       <div class="section-heading">
-        <div><p class="eyebrow">CHECKPOINT</p><h1>Trail alerts</h1></div>
+        <div><p class="eyebrow">CHECKPOINT ALERTS</p><h1>Trail alerts</h1></div>
         <button class="quiet" id="refresh">Refresh</button>
       </div>
-      <p class="muted">Reports saved by hikers at this checkpoint.</p>
+      <p class="muted" id="alerts-status">Reports saved by hikers at this checkpoint.</p>
       <div id="alerts" class="alerts"><p class="muted">Loading reports…</p></div>
     </section>
   `, true)
   async function load () {
-    const response = await fetch('/api/alerts')
-    const result = await response.json()
-    const items = result.alerts || []
-    document.querySelector('#alerts').innerHTML = items.length
-      ? items.slice().reverse().map(alertCard).join('')
-      : '<p class="empty">No reports have been saved yet.</p>'
+    try {
+      const response = await fetch('/api/alerts')
+      const result = await response.json()
+      const items = result.alerts || []
+      const statusText = result.source === 'p2p-checkpoint'
+        ? '⚡ Live peer-to-peer updates from trail checkpoint.'
+        : 'Reports saved by hikers at this checkpoint.'
+      const statusEl = document.querySelector('#alerts-status')
+      if (statusEl) statusEl.textContent = statusText
+
+      document.querySelector('#alerts').innerHTML = items.length
+        ? items.slice().reverse().map(alertCard).join('')
+        : '<p class="empty">No reports have been saved yet.</p>'
+    } catch (err) {
+      document.querySelector('#alerts').innerHTML = `<p class="empty">Could not load reports: ${escapeHtml(err.message)}</p>`
+    }
   }
   document.querySelector('#refresh').addEventListener('click', load)
   await load()

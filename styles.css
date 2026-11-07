@@ -42,7 +42,8 @@ textarea:focus { border-color: #86a98b; box-shadow: 0 0 0 3px #86a98b22; }
 .section-heading { align-items: center; display: flex; justify-content: space-between; gap: 20px; }
 .alerts { display: grid; gap: 13px; margin-top: 32px; }
 .alert-card { border: 1px solid #dfe6dc; border-radius: 16px; padding: 20px; }
-.alert-meta { color: #87948b; display: flex; font-size: 12px; gap: 16px; }
+.alert-meta { color: #87948b; display: flex; align-items: center; justify-content: space-between; font-size: 12px; margin-bottom: 8px; }
+.unverified-badge { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; }
 .alert-type { color: #6d9477; font-size: 12px; font-weight: 800; letter-spacing: .08em; margin-bottom: 8px; text-transform: uppercase; }
 .alert-card h2 { font-size: 19px; font-weight: 600; line-height: 1.4; margin: 0 0 10px; }
 .location { color: #53645b; font-size: 14px; margin: 0 0 16px; }

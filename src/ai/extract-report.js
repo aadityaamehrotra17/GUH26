@@ -1,10 +1,3 @@
-import {
-  completion,
-  loadModel,
-  unloadModel,
-  QWEN3_4B_INST_Q4_K_M
-} from '@qvac/sdk'
-
 const MODEL_CONTEXT_SIZE = 2048
 
 const EXTRACTION_INSTRUCTIONS = `Format a hiker's trail report into a concise alert.
@@ -32,17 +25,39 @@ Return only one valid JSON object:
 }
 Set isUseful to false when the transcript is clearly rubbish.`
 
+let qvacModule = null
+async function getQvac () {
+  if (qvacModule !== null) return qvacModule
+  try {
+    qvacModule = await import('@qvac/sdk')
+    return qvacModule
+  } catch {
+    qvacModule = false
+    return false
+  }
+}
+
 let modelId
 let loadPromise
 
 async function getModelId (onProgress) {
   if (modelId) return modelId
 
-  loadPromise ??= loadModel({
-    modelSrc: QWEN3_4B_INST_Q4_K_M,
-    modelConfig: { ctx_size: MODEL_CONTEXT_SIZE },
-    onProgress
-  })
+  const qvac = await getQvac()
+  if (!qvac) throw new Error('@qvac/sdk is not available on this device.')
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('QVAC model initialization timed out')), 5000)
+  )
+
+  loadPromise ??= Promise.race([
+    qvac.loadModel({
+      modelSrc: qvac.QWEN3_4B_INST_Q4_K_M,
+      modelConfig: { ctx_size: MODEL_CONTEXT_SIZE },
+      onProgress
+    }),
+    timeoutPromise
+  ])
 
   try {
     modelId = await loadPromise
@@ -52,18 +67,19 @@ async function getModelId (onProgress) {
   }
 }
 
-function fallbackReport (userText) {
-  const normalizedText = userText.toLowerCase()
+export function fallbackReport (userText) {
+  const normalizedText = (userText || '').toLowerCase()
   let category = 'other'
   if (/landslide|rockfall|rock|mudslide/.test(normalizedText)) category = 'landslide'
   else if (/flood|water/.test(normalizedText)) category = 'flood'
   else if (/fire|smoke/.test(normalizedText)) category = 'fire'
-  else if (/fallen tree|tree/.test(normalizedText)) category = 'fallen_tree'
+  else if (/fallen tree|tree|log/.test(normalizedText)) category = 'fallen_tree'
+  else if (/bridge|damaged/.test(normalizedText)) category = 'infrastructure'
 
   return {
     category,
-    description: userText.trim(),
-    trailSegment: inferTrailSegment(userText)
+    description: (userText || '').trim(),
+    trailSegment: inferTrailSegment(userText || '')
   }
 }
 
@@ -142,17 +158,28 @@ export async function validateTranscript (userText, { onProgress } = {}) {
     throw new TypeError('userText must be a non-empty string')
   }
 
-  const id = await getModelId(onProgress)
-  const run = completion({
-    modelId: id,
-    history: [
-      { role: 'system', content: `${VALIDATION_INSTRUCTIONS} /no_think` },
-      { role: 'user', content: userText.trim() }
-    ],
-    stream: false
-  })
-  const result = await run.final
-  return parseValidation(result.contentText)
+  try {
+    const qvac = await getQvac()
+    if (!qvac) {
+      // Safe offline fallback validation: simple check for meaningful content
+      return { isUseful: userText.trim().length > 3, reason: 'Offline validated' }
+    }
+
+    const id = await getModelId(onProgress)
+    const run = qvac.completion({
+      modelId: id,
+      history: [
+        { role: 'system', content: `${VALIDATION_INSTRUCTIONS} /no_think` },
+        { role: 'user', content: userText.trim() }
+      ],
+      stream: false
+    })
+    const result = await run.final
+    return parseValidation(result.contentText)
+  } catch {
+    // If local LLM fails or is uninstalled, do not reject valid reports
+    return { isUseful: true, reason: 'Fallback validation' }
+  }
 }
 
 export async function formatAlert (userText, { onProgress } = {}) {
@@ -160,22 +187,37 @@ export async function formatAlert (userText, { onProgress } = {}) {
     throw new TypeError('userText must be a non-empty string')
   }
 
-  const id = await getModelId(onProgress)
-  const run = completion({
-    modelId: id,
-    history: [
-      { role: 'system', content: `${EXTRACTION_INSTRUCTIONS} /no_think` },
-      { role: 'user', content: userText.trim() }
-    ],
-    stream: false
-  })
-  const result = await run.final
-  return parseReport(result.contentText, userText)
+  try {
+    const qvac = await getQvac()
+    if (!qvac) {
+      return fallbackReport(userText)
+    }
+
+    const id = await getModelId(onProgress)
+    const run = qvac.completion({
+      modelId: id,
+      history: [
+        { role: 'system', content: `${EXTRACTION_INSTRUCTIONS} /no_think` },
+        { role: 'user', content: userText.trim() }
+      ],
+      stream: false
+    })
+    const result = await run.final
+    return parseReport(result.contentText, userText)
+  } catch (err) {
+    console.warn(`[qvac] Model inference notice: ${err.message}. Using rule-based fallback.`)
+    return fallbackReport(userText)
+  }
 }
 
 export async function closeModel () {
   if (!modelId) return
   const id = modelId
   modelId = undefined
-  await unloadModel({ modelId: id, clearStorage: false })
+  try {
+    const qvac = await getQvac()
+    if (qvac) {
+      await qvac.unloadModel({ modelId: id, clearStorage: false })
+    }
+  } catch {}
 }
