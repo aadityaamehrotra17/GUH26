@@ -11,20 +11,32 @@ import {
   DEFAULT_DHT_PORT
 } from './beacon.js'
 import { loadAlerts } from '../checkpoint/alert-store.js'
+import {
+  markIncomingTranscript,
+  saveIncomingTranscript
+} from '../checkpoint/incoming-transcript-store.js'
 import { storeTranscript } from '../ai/store-alert.js'
 
 async function processIncomingReport (report) {
   console.log(`[checkpoint] Received transcript ${report.id}: "${report.rawTranscript}"`)
+  await saveIncomingTranscript(report)
   console.log(`[checkpoint] Sending transcript ${report.id} to Qwen`)
-  return storeTranscript(report.rawTranscript, {
-    id: report.id,
-    createdAt: report.createdAt,
-    onProgress: (progress) => {
-      process.stdout.write(`\r[checkpoint] Qwen: ${progress.percentage.toFixed(0)}%`)
-    }
-  }).finally(() => {
+  try {
+    const alert = await storeTranscript(report.rawTranscript, {
+      id: report.id,
+      createdAt: report.createdAt,
+      onProgress: (progress) => {
+        process.stdout.write(`\r[checkpoint] Qwen: ${progress.percentage.toFixed(0)}%`)
+      }
+    })
+    await markIncomingTranscript(report.id, 'processed')
+    return alert
+  } catch (error) {
+    await markIncomingTranscript(report.id, 'rejected', error.message)
+    throw error
+  } finally {
     process.stdout.write('\n')
-  })
+  }
 }
 
 function receiverOptions () {
