@@ -7,7 +7,7 @@
 const { HikerPeer } = require('../src/p2p/peer')
 
 const TEST_REPORT = {
-  id: 'test-001',
+  id: `test-${Date.now()}`,
   createdAt: new Date().toISOString(),
   type: 'trail_hazard',
   category: 'landslide',
