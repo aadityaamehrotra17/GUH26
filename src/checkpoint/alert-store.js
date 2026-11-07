@@ -1,7 +1,11 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const STORE_PATH = resolve('data/checkpoint-alerts.json')
+const STORE_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../data/checkpoint-alerts.json'
+)
 
 export async function loadAlerts () {
   try {
