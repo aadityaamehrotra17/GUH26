@@ -17,9 +17,7 @@ import {
 } from '../checkpoint/incoming-transcript-store.js'
 import { storeTranscript } from '../ai/store-alert.js'
 
-async function processIncomingReport (report) {
-  console.log(`[checkpoint] Received transcript ${report.id}: "${report.rawTranscript}"`)
-  await saveIncomingTranscript(report)
+async function processTranscriptWithQwen (report) {
   console.log(`[checkpoint] Sending transcript ${report.id} to Qwen`)
   try {
     const alert = await storeTranscript(report.rawTranscript, {
@@ -30,13 +28,19 @@ async function processIncomingReport (report) {
       }
     })
     await markIncomingTranscript(report.id, 'processed')
-    return alert
+    console.log(`\n[checkpoint] Stored alert ${alert.id}`)
   } catch (error) {
     await markIncomingTranscript(report.id, 'rejected', error.message)
-    throw error
-  } finally {
-    process.stdout.write('\n')
+    console.error(`\n[checkpoint] Qwen failed for ${report.id}: ${error.message}`)
   }
+}
+
+async function processIncomingReport (report) {
+  console.log(`[checkpoint] Received transcript ${report.id}: "${report.rawTranscript}"`)
+  await saveIncomingTranscript(report)
+  console.log(`[checkpoint] Persisted transcript ${report.id}`)
+  void processTranscriptWithQwen(report)
+  return { id: report.id, processing: 'queued' }
 }
 
 function receiverOptions () {
