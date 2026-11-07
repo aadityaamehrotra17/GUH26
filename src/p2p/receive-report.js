@@ -1,5 +1,5 @@
 
-import b4a from 'b4a'
+const b4a = require('b4a')
 
 const MAX_FRAME_LENGTH = 16_384
 
@@ -8,9 +8,7 @@ const VALID_REPORT_TYPES = new Set([
   'assistance_request'
 ])
 
-const VALID_STATUSES = new Set([
-  'unverified'
-])
+const VALID_STATUSES = new Set(['unverified'])
 
 function requireString(value, field, maxLength) {
   if (
@@ -24,9 +22,9 @@ function requireString(value, field, maxLength) {
   return value
 }
 
-export function validateReport(report) {
+function validateReport(report) {
   if (
-    report === null ||
+    !report ||
     typeof report !== 'object' ||
     Array.isArray(report)
   ) {
@@ -61,9 +59,7 @@ export function validateReport(report) {
 }
 
 function sendMessage(socket, message) {
-  socket.write(
-    b4a.from(JSON.stringify(message) + '\n')
-  )
+  socket.write(b4a.from(JSON.stringify(message) + '\n'))
 }
 
 function sendError(socket, code, message) {
@@ -74,14 +70,7 @@ function sendError(socket, code, message) {
   })
 }
 
-/**
- * Attaches a report receiver to an established peer socket.
- *
- * onReport is supplied by the application. It can initially log
- * received reports and later be replaced with the checkpoint's
- * persistent saveReport function.
- */
-export function attachReportReceiver(socket, { onReport }) {
+function attachReportReceiver(socket, { onReport }) {
   if (typeof onReport !== 'function') {
     throw new TypeError('onReport callback is required')
   }
@@ -111,7 +100,7 @@ export function attachReportReceiver(socket, { onReport }) {
     try {
       const report = validateReport(message.report)
 
-      // Application callback: logging now, persistent storage later.
+      // Store the report before acknowledging delivery.
       await onReport(report)
 
       sendMessage(socket, {
@@ -146,12 +135,16 @@ export function attachReportReceiver(socket, { onReport }) {
         continue
       }
 
-      // Process messages sequentially to preserve their order.
       processing = processing.then(() => processFrame(frame))
     }
 
     if (buffer.length > MAX_FRAME_LENGTH) {
-      sendError(socket, 'FRAME_TOO_LARGE', 'Incomplete message is too large')
+      sendError(
+        socket,
+        'FRAME_TOO_LARGE',
+        'Incomplete message is too large'
+      )
+
       buffer = ''
       socket.destroy()
     }
@@ -166,4 +159,9 @@ export function attachReportReceiver(socket, { onReport }) {
   return () => {
     socket.removeListener('data', onData)
   }
+}
+
+module.exports = {
+  validateReport,
+  attachReportReceiver
 }
