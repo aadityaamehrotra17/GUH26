@@ -1,0 +1,22 @@
+{
+  "name": "guh26",
+  "version": "1.0.0",
+  "description": "**Offline trail-safety reports shared between hikers and trail checkpoints.**",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/**/*.test.js",
+    "test:ui": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aadityaamehrotra17/GUH26.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/aadityaamehrotra17/GUH26/issues"
+  },
+  "homepage": "https://github.com/aadityaamehrotra17/GUH26#readme"
+}
