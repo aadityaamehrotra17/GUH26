@@ -21,7 +21,10 @@ Do not include generic words such as "the", "path", or "trail" unless they are p
 const VALIDATION_INSTRUCTIONS = `Decide whether a transcript is a genuine, useful hiking report.
 A useful report describes a trail hazard, route condition, safety concern, assistance request,
 or other actionable information for hikers. Reject conversational filler, model-generated text,
-random words, incomplete fragments, and messages that do not contain useful hiking information.
+or random words that do not contain useful hiking information. Speech-to-text may contain
+grammar errors, repeated sounds, misspellings, or short fragments; do not reject a message
+just because it is incomplete or ungrammatical if its meaning clearly describes a possible
+trail hazard or safety concern, such as "tree fell down".
 Return only one valid JSON object:
 {
   "isUseful": true,
