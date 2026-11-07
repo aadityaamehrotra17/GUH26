@@ -15,7 +15,8 @@ const TEST_REPORT = {
   description: 'Rocks and mud are blocking the path.',
   trailSegment: 'Bridge 2 to Summit',
   status: 'unverified',
-  source: 'hiker-device'
+  source: 'hiker-device',
+  originalText: 'Rocks and mud are blocking the path.'
 }
 
 async function main () {

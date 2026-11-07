@@ -2,3 +2,5 @@ node_modules/
 hello-pear-qvac-tui/
 .DS_Store
 .env
+data/*.json
+data/*.tmp
