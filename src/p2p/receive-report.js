@@ -70,7 +70,7 @@ function sendError(socket, code, message) {
   })
 }
 
-function attachReportReceiver(socket, { onReport }) {
+function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
   if (typeof onReport !== 'function') {
     throw new TypeError('onReport callback is required')
   }
@@ -88,11 +88,38 @@ function attachReportReceiver(socket, { onReport }) {
       return
     }
 
+    if (message?.type === 'GET_REPORTS' || message?.type === 'GET_ALERTS') {
+      if (typeof onGetReports !== 'function') {
+        sendError(
+          socket,
+          'FEATURE_UNAVAILABLE',
+          'Retrieving reports is not supported'
+        )
+        return
+      }
+
+      try {
+        const reports = await onGetReports()
+        sendMessage(socket, {
+          type: 'REPORTS_RESPONSE',
+          reports: Array.isArray(reports) ? reports : []
+        })
+        console.log(`[checkpoint] Served ${Array.isArray(reports) ? reports.length : 0} reports`)
+      } catch (error) {
+        sendError(
+          socket,
+          'REPORTS_FETCH_FAILED',
+          error.message || 'Could not fetch reports'
+        )
+      }
+      return
+    }
+
     if (message?.type !== 'REPORT_SUBMIT') {
       sendError(
         socket,
         'UNSUPPORTED_MESSAGE',
-        'Expected REPORT_SUBMIT message'
+        'Expected REPORT_SUBMIT, GET_REPORTS, or GET_ALERTS message'
       )
       return
     }

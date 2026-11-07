@@ -4,72 +4,245 @@
 // Usage:
 //   const peer = new HikerPeer()
 //   await peer.connect()
-//   peer.onMessage((msg) => console.log('From checkpoint:', msg))
+//   const reports = await peer.getReports()
 //   await peer.sendReport(report)
 //   await peer.destroy()
 
 'use strict'
 
+const { EventEmitter } = require('node:events')
 const Hyperswarm = require('hyperswarm')
 const { TOPIC } = require('./topic')
 
-class HikerPeer {
+class HikerPeer extends EventEmitter {
   constructor () {
+    super()
     this.swarm = new Hyperswarm()
     this._conn = null
-    this._buffer = ''   // accumulates chunks until a \n arrives
+    this._buffer = ''
     this._onmessage = null
+    this.status = 'idle' // 'idle' | 'connecting' | 'connected' | 'disconnected' | 'destroyed'
+    this._pendingRequests = new Map() // requestId -> { resolve, reject, timer }
+    this._requestSeq = 0
+  }
+
+  get isConnected () {
+    return Boolean(this._conn && !this._conn.destroyed && this.status === 'connected')
   }
 
   // Connect to the checkpoint.
-  // Resolves once a connection is established.
-  connect () {
-    return new Promise((resolve, reject) => {
-      // Client-only: hiker finds the checkpoint, does not advertise itself.
-      this.swarm.join(TOPIC, { server: false, client: true })
+  // Resolves once a connection is established, or rejects on timeout.
+  connect (options = {}) {
+    const timeoutMs = options.timeout ?? 30000
 
-      this.swarm.on('connection', (conn) => {
-        console.log('[hiker] connected to checkpoint')
+    if (this.isConnected) {
+      return Promise.resolve()
+    }
+
+    this._setStatus('connecting')
+
+    return new Promise((resolve, reject) => {
+      let timer = null
+      let settled = false
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          this._setStatus(this._conn ? 'connected' : 'disconnected')
+          reject(new Error(
+            `[hiker] Connection to checkpoint timed out after ${timeoutMs}ms. ` +
+            'Verify checkpoint is running and both devices share the same local hotspot.'
+          ))
+        }, timeoutMs)
+      }
+
+      const onConnection = (conn) => {
+        // Multi-interface deduplication: If already connected, discard extraneous sockets.
+        if (this._conn && !this._conn.destroyed) {
+          conn.destroy()
+          return
+        }
+
         this._conn = conn
         this._setupConn(conn)
-        resolve()
-      })
+        this._setStatus('connected')
+        console.log('[hiker] connected to checkpoint')
 
-      // flush() waits until Hyperswarm has finished its first lookup
-      this.swarm.flush().catch(reject)
+        if (!settled) {
+          settled = true
+          if (timer) clearTimeout(timer)
+          resolve()
+        }
+      }
+
+      // Listen for incoming connections
+      this.swarm.on('connection', onConnection)
+
+      // Join the topic as client-only
+      this.swarm.join(TOPIC, { server: false, client: true })
+
+      this.swarm.flush().catch((err) => {
+        if (!settled && !this._conn) {
+          settled = true
+          if (timer) clearTimeout(timer)
+          this._setStatus('disconnected')
+          reject(err)
+        }
+      })
     })
   }
 
-  // Register a handler for messages coming from the checkpoint (ACK / ERROR).
+  // Register a handler for raw messages coming from the checkpoint.
   onMessage (handler) {
     this._onmessage = handler
   }
 
-  // Send a report to the checkpoint.
-  // Wraps it in the agreed REPORT_SUBMIT envelope and appends \n.
+  // Send a report without awaiting ACK directly (original API).
   async sendReport (report) {
-    if (!this._conn) throw new Error('[hiker] not connected to checkpoint')
+    if (!this.isConnected) {
+      throw new Error('[hiker] not connected to checkpoint')
+    }
     const msg = JSON.stringify({ type: 'REPORT_SUBMIT', report }) + '\n'
     this._conn.write(msg)
   }
 
+  // Submit a report and await explicit confirmation (REPORT_ACK or REPORT_ERROR).
+  async submitReport (report, options = {}) {
+    if (!this.isConnected) {
+      throw new Error('[hiker] not connected to checkpoint')
+    }
+
+    const timeoutMs = options.timeout ?? 10000
+
+    return new Promise((resolve, reject) => {
+      const targetId = report?.id
+      let timer = null
+
+      const handler = (msg) => {
+        if (msg.type === 'REPORT_ACK' && (!targetId || msg.reportId === targetId)) {
+          cleanup()
+          resolve(msg)
+        } else if (msg.type === 'REPORT_ERROR') {
+          cleanup()
+          reject(new Error(`[checkpoint] ${msg.code || 'ERROR'}: ${msg.message || 'Report rejected'}`))
+        }
+      }
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer)
+        this.removeListener('raw_message', handler)
+      }
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          cleanup()
+          reject(new Error(`[hiker] Timed out waiting for REPORT_ACK after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }
+
+      this.on('raw_message', handler)
+      this.sendReport(report).catch((err) => {
+        cleanup()
+        reject(err)
+      })
+    })
+  }
+
+  // Fetch all stored reports from the checkpoint.
+  async getReports (options = {}) {
+    if (!this.isConnected) {
+      throw new Error('[hiker] not connected to checkpoint')
+    }
+
+    const timeoutMs = options.timeout ?? 10000
+
+    return new Promise((resolve, reject) => {
+      let timer = null
+
+      const handler = (msg) => {
+        if (msg.type === 'REPORTS_RESPONSE') {
+          cleanup()
+          resolve(msg.reports || [])
+        } else if (msg.type === 'REPORT_ERROR') {
+          cleanup()
+          reject(new Error(`[checkpoint] ${msg.code || 'ERROR'}: ${msg.message || 'Failed to fetch reports'}`))
+        }
+      }
+
+      const cleanup = () => {
+        if (timer) clearTimeout(timer)
+        this.removeListener('raw_message', handler)
+      }
+
+      if (timeoutMs > 0) {
+        timer = setTimeout(() => {
+          cleanup()
+          reject(new Error(`[hiker] Timed out waiting for REPORTS_RESPONSE after ${timeoutMs}ms`))
+        }, timeoutMs)
+      }
+
+      this.on('raw_message', handler)
+
+      const msg = JSON.stringify({ type: 'GET_REPORTS' }) + '\n'
+      this._conn.write(msg, (err) => {
+        if (err) {
+          cleanup()
+          reject(err)
+        }
+      })
+    })
+  }
+
+  // README integration contract aliases
+  async getAlerts (options) {
+    return this.getReports(options)
+  }
+
+  async submitTranscript ({ reportId, createdAt, rawTranscript }, options) {
+    return this.submitReport({
+      id: reportId || `report-${Date.now()}`,
+      createdAt: createdAt || new Date().toISOString(),
+      type: 'trail_hazard',
+      category: 'general',
+      title: 'Trail Report',
+      description: rawTranscript,
+      trailSegment: 'unknown',
+      status: 'unverified',
+      source: 'hiker-device',
+      originalText: rawTranscript
+    }, options)
+  }
+
   async destroy () {
+    this._setStatus('destroyed')
+    if (this._conn) {
+      this._conn.destroy()
+      this._conn = null
+    }
     await this.swarm.destroy()
   }
 
   // ── private ────────────────────────────────────────────────────────────────
 
+  _setStatus (newStatus) {
+    if (this.status !== newStatus) {
+      this.status = newStatus
+      this.emit('status', newStatus)
+    }
+  }
+
   _setupConn (conn) {
     conn.on('data', (chunk) => {
-      // Buffer chunks and parse complete newline-delimited messages.
       this._buffer += chunk.toString()
       const lines = this._buffer.split('\n')
-      this._buffer = lines.pop()  // last element may be an incomplete line
+      this._buffer = lines.pop()
 
       for (const line of lines) {
         if (!line.trim()) continue
         try {
           const msg = JSON.parse(line)
+          this.emit('raw_message', msg)
           if (this._onmessage) this._onmessage(msg)
         } catch (e) {
           console.error('[hiker] received invalid JSON from checkpoint:', line)
@@ -79,11 +252,17 @@ class HikerPeer {
 
     conn.on('error', (err) => {
       console.error('[hiker] connection error:', err.message)
+      this.emit('error', err)
     })
 
     conn.on('close', () => {
-      console.log('[hiker] disconnected from checkpoint')
-      this._conn = null
+      if (this._conn === conn) {
+        console.log('[hiker] disconnected from checkpoint')
+        this._conn = null
+        if (this.status !== 'destroyed') {
+          this._setStatus('disconnected')
+        }
+      }
     })
   }
 }

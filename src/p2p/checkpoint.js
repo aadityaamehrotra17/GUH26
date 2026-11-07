@@ -47,6 +47,9 @@ async function startCheckpoint(options = {}) {
 
         // Returning successfully allows the receiver to send REPORT_ACK.
         // A storage failure causes REPORT_ERROR instead.
+      },
+      onGetReports: async () => {
+        return store.getReports()
       }
     })
   })
