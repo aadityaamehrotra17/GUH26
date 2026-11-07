@@ -13,16 +13,18 @@
 const { EventEmitter } = require('node:events')
 const Hyperswarm = require('hyperswarm')
 const { TOPIC } = require('./topic')
+const { discoverCheckpoint } = require('./beacon')
 
 class HikerPeer extends EventEmitter {
-  constructor () {
+  constructor (options = {}) {
     super()
-    this.swarm = new Hyperswarm()
+    this._options = options
+    this.swarm = options.swarm || null
     this._conn = null
     this._buffer = ''
     this._onmessage = null
     this.status = 'idle' // 'idle' | 'connecting' | 'connected' | 'disconnected' | 'destroyed'
-    this._pendingRequests = new Map() // requestId -> { resolve, reject, timer }
+    this._pendingRequests = new Map()
     this._requestSeq = 0
   }
 
@@ -32,14 +34,34 @@ class HikerPeer extends EventEmitter {
 
   // Connect to the checkpoint.
   // Resolves once a connection is established, or rejects on timeout.
-  connect (options = {}) {
+  async connect (options = {}) {
     const timeoutMs = options.timeout ?? 30000
 
     if (this.isConnected) {
-      return Promise.resolve()
+      return
     }
 
     this._setStatus('connecting')
+
+    // Discover local checkpoint beacon over local Wi-Fi/hotspot (zero-internet offline mode)
+    if (!this.swarm) {
+      const found = await discoverCheckpoint({
+        directHost: options.checkpointHost || this._options.checkpointHost || process.env.CHECKPOINT_HOST,
+        timeoutMs: options.discoveryTimeout ?? 1200
+      })
+
+      const bootstrap = found
+        ? [{ host: found.host, port: found.port }]
+        : undefined
+
+      if (found) {
+        console.log(`[hiker] Discovered offline checkpoint at ${found.host}:${found.port}`)
+      } else {
+        console.log('[hiker] No offline beacon found; attempting public DHT bootstrap...')
+      }
+
+      this.swarm = new Hyperswarm({ bootstrap })
+    }
 
     return new Promise((resolve, reject) => {
       let timer = null
@@ -220,7 +242,10 @@ class HikerPeer extends EventEmitter {
       this._conn.destroy()
       this._conn = null
     }
-    await this.swarm.destroy()
+    if (this.swarm) {
+      await this.swarm.destroy()
+      this.swarm = null
+    }
   }
 
   // ── private ────────────────────────────────────────────────────────────────

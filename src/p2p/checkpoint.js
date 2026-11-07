@@ -1,12 +1,16 @@
+// src/p2p/checkpoint.js
+// Checkpoint-side P2P listener, offline DHT bootstrapper, and report store.
 
 'use strict'
 
 const path = require('node:path')
+const HyperDHT = require('hyperdht')
 const Hyperswarm = require('hyperswarm')
 
 const { TOPIC } = require('./topic')
 const { attachReportReceiver } = require('./receive-report')
 const { createReportStore } = require('./report-store')
+const { startCheckpointBeacon, getLocalIPv4, DEFAULT_DHT_PORT } = require('./beacon')
 
 const DEFAULT_STORE_PATH = path.resolve(
   __dirname,
@@ -15,11 +19,35 @@ const DEFAULT_STORE_PATH = path.resolve(
 
 async function startCheckpoint(options = {}) {
   const filePath = options.filePath || DEFAULT_STORE_PATH
+  const host = options.host || getLocalIPv4()
+  const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
 
   // Load persistent reports before accepting new connections.
   const store = await createReportStore(filePath)
 
-  const swarm = new Hyperswarm()
+  // Start local DHT bootstrapper for 100% offline local-network discovery.
+  let bootstrapper = null
+  try {
+    bootstrapper = HyperDHT.bootstrapper(dhtPort, host)
+    await bootstrapper.ready()
+    console.log(`[checkpoint] Offline DHT bootstrapper active on ${host}:${dhtPort}`)
+  } catch (err) {
+    console.log('[checkpoint] Local DHT bootstrapper notice:', err.message)
+  }
+
+  // Start UDP discovery beacon for zero-config offline discovery by hikers.
+  let beacon = null
+  try {
+    beacon = await startCheckpointBeacon({ host, dhtPort })
+  } catch (err) {
+    console.log('[checkpoint] UDP beacon notice:', err.message)
+  }
+
+  const bootstrapNodes = bootstrapper
+    ? [{ host, port: dhtPort }]
+    : undefined
+
+  const swarm = new Hyperswarm({ bootstrap: bootstrapNodes })
 
   let shutdownPromise = null
 
@@ -72,6 +100,7 @@ async function startCheckpoint(options = {}) {
   const existingReports = await store.getReports()
 
   console.log('[checkpoint] READY')
+  console.log('[checkpoint] Local IP:', host)
   console.log('[checkpoint] Stored reports:', existingReports.length)
   console.log('[checkpoint] Waiting for hikers...')
 
@@ -80,6 +109,8 @@ async function startCheckpoint(options = {}) {
       shutdownPromise = (async () => {
         console.log('[checkpoint] Shutting down...')
         await swarm.destroy()
+        if (beacon) await beacon.destroy()
+        if (bootstrapper) await bootstrapper.destroy()
         console.log('[checkpoint] Stopped.')
       })()
     }
