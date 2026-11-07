@@ -92,7 +92,7 @@ function report () {
           const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
           const response = await fetch('/api/transcribe', { method: 'POST', body: audio })
           const result = await response.json()
-          if (!response.ok) throw new Error(result.error)
+          if (!response.ok) throw new Error(result.error || 'Local transcription failed.')
           text.value = result.transcript
           label.textContent = 'Ready to send'
           help.textContent = 'Review the words, then send your report.'
@@ -125,9 +125,9 @@ function report () {
         body: JSON.stringify({ rawTranscript })
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error)
-      feedback.textContent = 'Report saved. Thank you for looking out for the trail.'
+      if (!response.ok) throw new Error(result.error?.startsWith('Report rejected') ? 'Report rejected' : (result.error || 'Could not send report.'))
       text.value = ''
+      home()
     } catch (error) {
       feedback.textContent = error.message
     }

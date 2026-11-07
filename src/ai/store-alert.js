@@ -9,7 +9,7 @@ export async function storeTranscript (rawTranscript, { onProgress } = {}) {
 
   const validation = await validateTranscript(transcript, { onProgress })
   if (!validation.isUseful) {
-    throw new Error(`Report discarded by local AI: ${validation.reason}`)
+    throw new Error(`Report rejected: ${validation.reason}`)
   }
 
   const fields = await formatAlert(transcript, { onProgress })
