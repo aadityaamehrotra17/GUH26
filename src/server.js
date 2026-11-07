@@ -109,20 +109,21 @@ const server = createServer(async (request, response) => {
     // 1. Get trail alerts
     if (request.method === 'GET' && request.url === '/api/alerts') {
       if (role === 'hiker') {
+        let peer
         try {
-          const peer = new HikerPeer()
+          peer = new HikerPeer()
           await peer.connect({ timeout: 4000 })
           const reports = await peer.getReports({ timeout: 4000 })
-          await peer.destroy()
           json(response, 200, { alerts: reports, source: 'p2p-checkpoint' })
           return
         } catch (peerErr) {
-          console.warn('[server] P2P fetch notice:', peerErr.message, 'falling back to local cache')
+          throw new Error(`Could not load checkpoint alerts: ${peerErr.message}`)
+        } finally {
+          await peer?.destroy()
         }
       }
 
-      // Checkpoint or local fallback
-      json(response, 200, { alerts: await loadAlerts(), source: 'local' })
+      json(response, 200, { alerts: await loadAlerts(), source: 'checkpoint-alerts' })
       return
     }
 

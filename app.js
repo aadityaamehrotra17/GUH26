@@ -138,13 +138,11 @@ function report () {
 function alertCard (alert) {
   const date = alert.date || alert.createdAt?.slice(0, 10) || 'Unknown date'
   const time = alert.time || alert.createdAt?.slice(11, 16) || 'Unknown time'
-  const status = (alert.status || 'unverified').toUpperCase()
 
   return `
     <article class="alert-card">
       <div class="alert-meta">
         <span>${escapeHtml(date)} &bull; ${escapeHtml(time)}</span>
-        <span class="unverified-badge">${escapeHtml(status)}</span>
       </div>
       <p class="alert-type">${escapeHtml(alert.category || 'Trail report')}</p>
       <h2>${escapeHtml(alert.description || alert.rawTranscript || 'No description')}</h2>
@@ -169,12 +167,10 @@ async function alerts () {
     try {
       const response = await fetch('/api/alerts')
       const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not load checkpoint alerts.')
       const items = result.alerts || []
-      const statusText = result.source === 'p2p-checkpoint'
-        ? '⚡ Live peer-to-peer updates from trail checkpoint.'
-        : 'Reports saved by hikers at this checkpoint.'
       const statusEl = document.querySelector('#alerts-status')
-      if (statusEl) statusEl.textContent = statusText
+      if (statusEl) statusEl.textContent = 'Alerts stored at the checkpoint.'
 
       document.querySelector('#alerts').innerHTML = items.length
         ? items.slice().reverse().map(alertCard).join('')
