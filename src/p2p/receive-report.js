@@ -1,14 +1,8 @@
 
-const b4a = require('b4a')
+import b4a from 'b4a'
 
 const MAX_FRAME_LENGTH = 16_384
 
-const VALID_REPORT_TYPES = new Set([
-  'trail_hazard',
-  'assistance_request'
-])
-
-const VALID_STATUSES = new Set(['unverified'])
 
 function requireString(value, field, maxLength) {
   if (
@@ -22,40 +16,21 @@ function requireString(value, field, maxLength) {
   return value
 }
 
-function validateReport(report) {
-  if (
-    !report ||
-    typeof report !== 'object' ||
-    Array.isArray(report)
-  ) {
+function validateReport (report) {
+  if (!report || typeof report !== 'object' || Array.isArray(report)) {
     throw new Error('Report must be a JSON object')
   }
 
   requireString(report.id, 'id', 128)
-
-  if (
-    typeof report.createdAt !== 'string' ||
-    !Number.isFinite(Date.parse(report.createdAt))
-  ) {
+  if (typeof report.createdAt !== 'string' || !Number.isFinite(Date.parse(report.createdAt))) {
     throw new Error('Invalid report timestamp')
   }
-
-  if (!VALID_REPORT_TYPES.has(report.type)) {
-    throw new Error('Unsupported report type')
+  requireString(report.rawTranscript, 'rawTranscript', 2000)
+  return {
+    id: report.id,
+    createdAt: report.createdAt,
+    rawTranscript: report.rawTranscript.trim()
   }
-
-  if (!VALID_STATUSES.has(report.status)) {
-    throw new Error('Incoming reports must be unverified')
-  }
-
-  requireString(report.category, 'category', 80)
-  requireString(report.title, 'title', 120)
-  requireString(report.description, 'description', 2000)
-  requireString(report.trailSegment, 'trailSegment', 120)
-  requireString(report.source, 'source', 120)
-  requireString(report.originalText, 'originalText', 2000)
-
-  return report
 }
 
 function sendMessage(socket, message) {
@@ -128,12 +103,13 @@ function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
       const report = validateReport(message.report)
 
       // Store the report before acknowledging delivery.
-      await onReport(report)
+      const alert = await onReport(report)
 
       sendMessage(socket, {
         type: 'REPORT_ACK',
         reportId: report.id,
-        received: true
+        received: true,
+        alert: alert || undefined
       })
 
       console.log(`[checkpoint] Accepted report ${report.id}`)
@@ -188,7 +164,4 @@ function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
   }
 }
 
-module.exports = {
-  validateReport,
-  attachReportReceiver
-}
+export { validateReport, attachReportReceiver }

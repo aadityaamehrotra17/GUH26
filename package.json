@@ -9,7 +9,8 @@
     "ai:talk": "node src/ai/talk-and-transcribe.js",
     "checkpoint:alerts": "node src/checkpoint/run-checkpoint.js",
     "dev": "node src/server.js",
-    "test": "node --test test/group-alerts.test.js test/group-alerts-normalization.test.js"
+    "test": "node --test test/group-alerts.test.js test/group-alerts-normalization.test.js test/p2p-report-contract.test.js",
+    "checkpoint:p2p": "node src/p2p/checkpoint.js"
   },
   "repository": {
     "type": "git",

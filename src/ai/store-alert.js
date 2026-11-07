@@ -1,7 +1,7 @@
 import { formatAlert, validateTranscript } from './extract-report.js'
 import { loadAlerts, saveAlert } from '../checkpoint/alert-store.js'
 
-export async function storeTranscript (rawTranscript, { onProgress } = {}) {
+export async function storeTranscript (rawTranscript, { onProgress, id, createdAt: requestedCreatedAt } = {}) {
   const transcript = rawTranscript.trim()
   if (!transcript) {
     throw new Error('Cannot store an empty hiking transcript.')
@@ -16,10 +16,10 @@ export async function storeTranscript (rawTranscript, { onProgress } = {}) {
   const storedAlerts = await loadAlerts()
   const createdAt = new Date().toISOString()
   const alert = {
-    id: `report-${storedAlerts.length + 1}`,
-    createdAt,
-    date: createdAt.slice(0, 10),
-    time: createdAt.slice(11, 19),
+    id: id || `report-${storedAlerts.length + 1}`,
+    createdAt: requestedCreatedAt || createdAt,
+    date: (requestedCreatedAt || createdAt).slice(0, 10),
+    time: (requestedCreatedAt || createdAt).slice(11, 19),
     ...fields,
     rawTranscript: transcript
   }

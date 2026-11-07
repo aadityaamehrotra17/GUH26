@@ -11,11 +11,11 @@
 
 'use strict'
 
-const net = require('node:net')
-const { EventEmitter } = require('node:events')
-const Hyperswarm = require('hyperswarm')
-const { TOPIC } = require('./topic')
-const { discoverCheckpoint } = require('./beacon')
+import net from 'node:net'
+import { EventEmitter } from 'node:events'
+import Hyperswarm from 'hyperswarm'
+import { TOPIC } from './topic.js'
+import { discoverCheckpoint } from './beacon.js'
 
 class HikerPeer extends EventEmitter {
   constructor (options = {}) {
@@ -228,7 +228,7 @@ class HikerPeer extends EventEmitter {
 
       this.on('raw_message', handler)
 
-      const msg = JSON.stringify({ type: 'GET_REPORTS' }) + '\n'
+      const msg = JSON.stringify({ type: 'GET_ALERTS' }) + '\n'
       this._conn.write(msg, (err) => {
         if (err) {
           cleanup()
@@ -247,14 +247,7 @@ class HikerPeer extends EventEmitter {
     return this.submitReport({
       id: reportId || `report-${Date.now()}`,
       createdAt: createdAt || new Date().toISOString(),
-      type: 'trail_hazard',
-      category: 'general',
-      title: 'Trail Report',
-      description: rawTranscript,
-      trailSegment: 'unknown',
-      status: 'unverified',
-      source: 'hiker-device',
-      originalText: rawTranscript
+      rawTranscript
     }, options)
   }
 
@@ -314,4 +307,4 @@ class HikerPeer extends EventEmitter {
   }
 }
 
-module.exports = { HikerPeer }
+export { HikerPeer }

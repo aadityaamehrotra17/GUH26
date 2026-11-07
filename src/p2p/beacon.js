@@ -5,8 +5,8 @@
 
 'use strict'
 
-const dgram = require('node:dgram')
-const os = require('node:os')
+import dgram from 'node:dgram'
+import os from 'node:os'
 
 const BEACON_PORT = 49738
 const DEFAULT_TCP_PORT = 49736
@@ -165,7 +165,7 @@ async function discoverCheckpoint (options = {}) {
   })
 }
 
-module.exports = {
+export {
   BEACON_PORT,
   DEFAULT_TCP_PORT,
   DEFAULT_DHT_PORT,

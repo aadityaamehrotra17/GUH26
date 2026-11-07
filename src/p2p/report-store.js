@@ -1,8 +1,8 @@
 
 'use strict'
 
-const fs = require('node:fs/promises')
-const path = require('node:path')
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
 async function createReportStore(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
@@ -86,4 +86,4 @@ async function createReportStore(filePath) {
   }
 }
 
-module.exports = { createReportStore }
+export { createReportStore }
