@@ -3,16 +3,14 @@
 // Allows hikers and checkpoints on the same hotspot/Wi-Fi to discover each other
 // with ZERO internet and without hardcoding IP addresses.
 
-'use strict'
+import dgram from 'node:dgram'
+import os from 'node:os'
 
-const dgram = require('node:dgram')
-const os = require('node:os')
+export const BEACON_PORT = 49738
+export const DEFAULT_TCP_PORT = 49736
+export const DEFAULT_DHT_PORT = 49737
 
-const BEACON_PORT = 49738
-const DEFAULT_TCP_PORT = 49736
-const DEFAULT_DHT_PORT = 49737
-
-function getLocalIPv4 () {
+export function getLocalIPv4 () {
   const ifaces = os.networkInterfaces()
   const candidates = []
 
@@ -32,7 +30,7 @@ function getLocalIPv4 () {
   return candidates[0] || '127.0.0.1'
 }
 
-function getBroadcastAddresses () {
+export function getBroadcastAddresses () {
   const broadcasts = ['255.255.255.255']
   const ifaces = os.networkInterfaces()
 
@@ -57,7 +55,7 @@ function getBroadcastAddresses () {
 
 // Start beacon responder on the Checkpoint.
 // Listens for TRAILSIGNAL_DISCOVER and replies with its direct TCP and DHT coordinates.
-function startCheckpointBeacon (options = {}) {
+export function startCheckpointBeacon (options = {}) {
   const host = options.host || getLocalIPv4()
   const tcpPort = options.tcpPort || DEFAULT_TCP_PORT
   const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
@@ -101,7 +99,7 @@ function startCheckpointBeacon (options = {}) {
 }
 
 // Hiker: broadcast discovery request to find nearby checkpoint.
-async function discoverCheckpoint (options = {}) {
+export async function discoverCheckpoint (options = {}) {
   const directHost = options.directHost || process.env.CHECKPOINT_HOST
   const tcpPort = options.tcpPort || DEFAULT_TCP_PORT
   const dhtPort = options.dhtPort || DEFAULT_DHT_PORT
@@ -126,7 +124,7 @@ async function discoverCheckpoint (options = {}) {
 
     const timer = setTimeout(() => {
       cleanup()
-      resolve(null) // none found within timeout, will fall back to public DHT
+      resolve(null)
     }, timeoutMs)
 
     socket.on('message', (msg, rinfo) => {
@@ -163,14 +161,4 @@ async function discoverCheckpoint (options = {}) {
       }
     })
   })
-}
-
-module.exports = {
-  BEACON_PORT,
-  DEFAULT_TCP_PORT,
-  DEFAULT_DHT_PORT,
-  getLocalIPv4,
-  getBroadcastAddresses,
-  startCheckpointBeacon,
-  discoverCheckpoint
 }

@@ -1,23 +1,14 @@
 // peer.js
 // Hiker-side P2P connection to the checkpoint.
 // Supports both direct offline local-hotspot transport and Hyperswarm swarm discovery.
-//
-// Usage:
-//   const peer = new HikerPeer()
-//   await peer.connect()
-//   const reports = await peer.getReports()
-//   await peer.sendReport(report)
-//   await peer.destroy()
 
-'use strict'
+import net from 'node:net'
+import { EventEmitter } from 'node:events'
+import Hyperswarm from 'hyperswarm'
+import { TOPIC } from './topic.js'
+import { discoverCheckpoint } from './beacon.js'
 
-const net = require('node:net')
-const { EventEmitter } = require('node:events')
-const Hyperswarm = require('hyperswarm')
-const { TOPIC } = require('./topic')
-const { discoverCheckpoint } = require('./beacon')
-
-class HikerPeer extends EventEmitter {
+export class HikerPeer extends EventEmitter {
   constructor (options = {}) {
     super()
     this._options = options
@@ -157,7 +148,7 @@ class HikerPeer extends EventEmitter {
       throw new Error('[hiker] not connected to checkpoint')
     }
 
-    const timeoutMs = options.timeout ?? 10000
+    const timeoutMs = options.timeout ?? 15000
 
     return new Promise((resolve, reject) => {
       const targetId = report?.id
@@ -254,6 +245,7 @@ class HikerPeer extends EventEmitter {
       trailSegment: 'unknown',
       status: 'unverified',
       source: 'hiker-device',
+      rawTranscript: rawTranscript,
       originalText: rawTranscript
     }, options)
   }
@@ -313,5 +305,3 @@ class HikerPeer extends EventEmitter {
     })
   }
 }
-
-module.exports = { HikerPeer }

@@ -2,9 +2,7 @@
 // Quick smoke test — run this once your teammate's checkpoint is up.
 // Usage: node test/hiker-test.js
 
-'use strict'
-
-const { HikerPeer } = require('../src/p2p/peer')
+import { HikerPeer } from '../src/p2p/peer.js'
 
 const TEST_REPORT = {
   id: `test-${Date.now()}`,
@@ -12,11 +10,12 @@ const TEST_REPORT = {
   type: 'trail_hazard',
   category: 'landslide',
   title: 'Path blocked by landslide',
-  description: 'Rocks and mud are blocking the path.',
+  description: 'Rocks and mud are blocking the path between Bridge 2 and the summit.',
   trailSegment: 'Bridge 2 to Summit',
   status: 'unverified',
   source: 'hiker-device',
-  originalText: 'Rocks and mud are blocking the path.'
+  rawTranscript: 'Rocks and mud are blocking the path between Bridge 2 and the summit.',
+  originalText: 'Rocks and mud are blocking the path between Bridge 2 and the summit.'
 }
 
 async function main () {

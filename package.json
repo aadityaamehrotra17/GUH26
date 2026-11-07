@@ -4,11 +4,15 @@
   "version": "1.0.0",
   "description": "**Offline trail-safety reports shared between hikers and trail checkpoints.**",
   "scripts": {
+    "checkpoint": "node src/p2p/checkpoint.js",
+    "checkpoint:web": "node src/server.js",
+    "hiker:submit": "node test/hiker-test.js",
+    "hiker:fetch": "node test/fetch-reports-test.js",
+    "dev": "node src/server.js",
     "ai:submit": "node src/ai/submit-report.js",
     "ai:transcribe": "node src/ai/run-transcription.js",
     "ai:talk": "node src/ai/talk-and-transcribe.js",
     "checkpoint:alerts": "node src/checkpoint/run-checkpoint.js",
-    "dev": "node src/server.js",
     "test": "node --test test/group-alerts.test.js test/group-alerts-normalization.test.js"
   },
   "repository": {

@@ -1,9 +1,14 @@
-import {
-  loadModel,
-  transcribe,
-  unloadModel,
-  PARAKEET_TDT_0_6B_V3_Q8_0
-} from '@qvac/sdk'
+let qvacModule = null
+async function getQvac () {
+  if (qvacModule !== null) return qvacModule
+  try {
+    qvacModule = await import('@qvac/sdk')
+    return qvacModule
+  } catch {
+    qvacModule = false
+    return false
+  }
+}
 
 let modelId
 let loadPromise
@@ -11,8 +16,13 @@ let loadPromise
 async function getModelId (onProgress) {
   if (modelId) return modelId
 
-  loadPromise ??= loadModel({
-    modelSrc: PARAKEET_TDT_0_6B_V3_Q8_0,
+  const qvac = await getQvac()
+  if (!qvac) {
+    throw new Error('QVAC SDK is not available on this device. Use typed report fallback.')
+  }
+
+  loadPromise ??= qvac.loadModel({
+    modelSrc: qvac.PARAKEET_TDT_0_6B_V3_Q8_0,
     modelType: 'parakeet-transcription',
     onProgress
   })
@@ -30,8 +40,13 @@ export async function transcribeRecording (audioFilePath, { onProgress } = {}) {
     throw new TypeError('audioFilePath must be a non-empty string')
   }
 
+  const qvac = await getQvac()
+  if (!qvac) {
+    throw new Error('QVAC SDK is not available on this device. Use typed report fallback.')
+  }
+
   const id = await getModelId(onProgress)
-  return transcribe({
+  return qvac.transcribe({
     modelId: id,
     audioChunk: audioFilePath
   })
@@ -41,5 +56,10 @@ export async function closeTranscriptionModel () {
   if (!modelId) return
   const id = modelId
   modelId = undefined
-  await unloadModel({ modelId: id, clearStorage: false })
+  try {
+    const qvac = await getQvac()
+    if (qvac) {
+      await qvac.unloadModel({ modelId: id, clearStorage: false })
+    }
+  } catch {}
 }

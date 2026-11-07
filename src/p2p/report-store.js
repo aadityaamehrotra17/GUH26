@@ -1,10 +1,7 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
 
-'use strict'
-
-const fs = require('node:fs/promises')
-const path = require('node:path')
-
-async function createReportStore(filePath) {
+export async function createReportStore(filePath) {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
 
   const reportsById = new Map()
@@ -31,21 +28,14 @@ async function createReportStore(filePath) {
     }
   }
 
-  // Serialize writes to prevent simultaneous connections from
-  // overwriting each other's reports.
   let writeQueue = Promise.resolve()
 
   function saveReport(report) {
     const operation = writeQueue.catch(() => {}).then(async () => {
       const existing = reportsById.get(report.id)
 
-      // Repeated delivery of the same report is idempotent.
       if (existing) {
-        if (JSON.stringify(existing) !== JSON.stringify(report)) {
-          throw new Error('Report ID already exists with different content')
-        }
-
-        return { duplicate: true }
+        return { duplicate: true, report: existing }
       }
 
       const nextReports = [
@@ -55,7 +45,6 @@ async function createReportStore(filePath) {
 
       const temporaryPath = `${filePath}.${process.pid}.tmp`
 
-      // Write the complete file before replacing the previous version.
       await fs.writeFile(
         temporaryPath,
         JSON.stringify(nextReports, null, 2) + '\n',
@@ -63,11 +52,9 @@ async function createReportStore(filePath) {
       )
 
       await fs.rename(temporaryPath, filePath)
-
-      // Update memory only after the disk write succeeds.
       reportsById.set(report.id, report)
 
-      return { duplicate: false }
+      return { duplicate: false, report }
     })
 
     writeQueue = operation.catch(() => {})
@@ -76,7 +63,6 @@ async function createReportStore(filePath) {
 
   async function getReports() {
     await writeQueue.catch(() => {})
-
     return Array.from(reportsById.values())
   }
 
@@ -85,5 +71,3 @@ async function createReportStore(filePath) {
     getReports
   }
 }
-
-module.exports = { createReportStore }

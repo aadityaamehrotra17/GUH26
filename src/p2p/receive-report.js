@@ -1,14 +1,12 @@
-
-const b4a = require('b4a')
+import b4a from 'b4a'
 
 const MAX_FRAME_LENGTH = 16_384
 
 const VALID_REPORT_TYPES = new Set([
   'trail_hazard',
-  'assistance_request'
+  'assistance_request',
+  'general'
 ])
-
-const VALID_STATUSES = new Set(['unverified'])
 
 function requireString(value, field, maxLength) {
   if (
@@ -19,10 +17,10 @@ function requireString(value, field, maxLength) {
     throw new Error(`Invalid report field: ${field}`)
   }
 
-  return value
+  return value.trim()
 }
 
-function validateReport(report) {
+export function validateReport(report) {
   if (
     !report ||
     typeof report !== 'object' ||
@@ -31,38 +29,65 @@ function validateReport(report) {
     throw new Error('Report must be a JSON object')
   }
 
-  requireString(report.id, 'id', 128)
+  const id = typeof report.id === 'string' && report.id.trim()
+    ? report.id.trim()
+    : (typeof report.reportId === 'string' && report.reportId.trim()
+      ? report.reportId.trim()
+      : `report-${Date.now()}`)
 
-  if (
-    typeof report.createdAt !== 'string' ||
-    !Number.isFinite(Date.parse(report.createdAt))
-  ) {
-    throw new Error('Invalid report timestamp')
+  const createdAt = (typeof report.createdAt === 'string' && Number.isFinite(Date.parse(report.createdAt)))
+    ? report.createdAt
+    : new Date().toISOString()
+
+  const rawText = (typeof report.rawTranscript === 'string' && report.rawTranscript.trim())
+    ? report.rawTranscript.trim()
+    : ((typeof report.originalText === 'string' && report.originalText.trim())
+      ? report.originalText.trim()
+      : ((typeof report.description === 'string' && report.description.trim())
+        ? report.description.trim()
+        : ''))
+
+  if (!rawText) {
+    throw new Error('Report must include description or rawTranscript')
   }
 
-  if (!VALID_REPORT_TYPES.has(report.type)) {
-    throw new Error('Unsupported report type')
+  const type = VALID_REPORT_TYPES.has(report.type) ? report.type : 'trail_hazard'
+  const category = (typeof report.category === 'string' && report.category.trim())
+    ? report.category.trim()
+    : 'general'
+  const title = (typeof report.title === 'string' && report.title.trim())
+    ? report.title.trim()
+    : 'Trail Alert'
+  const description = (typeof report.description === 'string' && report.description.trim())
+    ? report.description.trim()
+    : rawText
+  const trailSegment = (typeof report.trailSegment === 'string' && report.trailSegment.trim())
+    ? report.trailSegment.trim()
+    : 'unknown'
+  const source = (typeof report.source === 'string' && report.source.trim())
+    ? report.source.trim()
+    : 'hiker-device'
+
+  return {
+    id,
+    createdAt,
+    type,
+    category,
+    title,
+    description,
+    trailSegment,
+    status: 'unverified', // Enforce unverified status
+    source,
+    rawTranscript: rawText,
+    originalText: rawText
   }
-
-  if (!VALID_STATUSES.has(report.status)) {
-    throw new Error('Incoming reports must be unverified')
-  }
-
-  requireString(report.category, 'category', 80)
-  requireString(report.title, 'title', 120)
-  requireString(report.description, 'description', 2000)
-  requireString(report.trailSegment, 'trailSegment', 120)
-  requireString(report.source, 'source', 120)
-  requireString(report.originalText, 'originalText', 2000)
-
-  return report
 }
 
-function sendMessage(socket, message) {
+export function sendMessage(socket, message) {
   socket.write(b4a.from(JSON.stringify(message) + '\n'))
 }
 
-function sendError(socket, code, message) {
+export function sendError(socket, code, message) {
   sendMessage(socket, {
     type: 'REPORT_ERROR',
     code,
@@ -70,7 +95,7 @@ function sendError(socket, code, message) {
   })
 }
 
-function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
+export function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
   if (typeof onReport !== 'function') {
     throw new TypeError('onReport callback is required')
   }
@@ -115,17 +140,18 @@ function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
       return
     }
 
-    if (message?.type !== 'REPORT_SUBMIT') {
+    if (message?.type !== 'REPORT_SUBMIT' && message?.type !== 'SUBMIT_REPORT') {
       sendError(
         socket,
         'UNSUPPORTED_MESSAGE',
-        'Expected REPORT_SUBMIT, GET_REPORTS, or GET_ALERTS message'
+        'Expected REPORT_SUBMIT, SUBMIT_REPORT, GET_REPORTS, or GET_ALERTS message'
       )
       return
     }
 
     try {
-      const report = validateReport(message.report)
+      const input = message.report || message
+      const report = validateReport(input)
 
       // Store the report before acknowledging delivery.
       await onReport(report)
@@ -186,9 +212,4 @@ function attachReportReceiver(socket, { onReport, onGetReports } = {}) {
   return () => {
     socket.removeListener('data', onData)
   }
-}
-
-module.exports = {
-  validateReport,
-  attachReportReceiver
 }
